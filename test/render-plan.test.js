@@ -1,5 +1,5 @@
 const { equal: eq, match, doesNotMatch } = require('node:assert/strict');
-const { afterEach, describe, test } = require('node:test');
+const { afterEach, beforeEach, describe, test } = require('node:test');
 const { renderPlan } = require('../lib/render-plan');
 
 const ESC = String.fromCharCode(27);
@@ -153,7 +153,8 @@ describe('renderPlan', () => {
   });
 
   describe('colour', () => {
-    const originalCI = process.env.CI;
+    const colourVars = ['CI', 'FORCE_COLOR', 'NO_COLOR'];
+    const originalEnv = Object.fromEntries(colourVars.map((name) => [name, process.env[name]]));
     const originalIsTTY = process.stdout.isTTY;
     const ansi = new RegExp(`${ESC}\\[`);
     const redMarker = new RegExp(`${ESC}\\[31m✘ cost 62431 exceeds limit 100${ESC}\\[0m`);
@@ -163,41 +164,71 @@ describe('renderPlan', () => {
       return [root, { passed: false, breaches: [{ node: root, limit: 'maxCost', threshold: 100, observed: 62431 }] }];
     };
 
-    const setCI = (value) => {
-      process.env.CI = value;
+    const setEnv = (name, value) => {
+      process.env[name] = value;
     };
 
-    const clearCI = () => {
-      Reflect.deleteProperty(process.env, 'CI');
+    const clearEnv = (name) => {
+      Reflect.deleteProperty(process.env, name);
     };
 
-    const restoreCI = () => {
-      if (originalCI === undefined) return clearCI();
-      process.env.CI = originalCI;
-    };
+    beforeEach(() => {
+      for (const name of colourVars) clearEnv(name);
+    });
 
     afterEach(() => {
-      restoreCI();
+      for (const name of colourVars) {
+        if (originalEnv[name] === undefined) clearEnv(name);
+        else setEnv(name, originalEnv[name]);
+      }
       process.stdout.isTTY = originalIsTTY;
     });
 
     test('wraps breach markers in red on an interactive terminal', () => {
-      clearCI();
       process.stdout.isTTY = true;
 
       match(renderPlan(...breaching()), redMarker);
     });
 
     test('emits no colour when CI is set', () => {
-      setCI('true');
+      setEnv('CI', 'true');
       process.stdout.isTTY = true;
 
       doesNotMatch(renderPlan(...breaching()), ansi);
     });
 
     test('emits no colour when stdout is not a TTY', () => {
-      clearCI();
       process.stdout.isTTY = false;
+
+      doesNotMatch(renderPlan(...breaching()), ansi);
+    });
+
+    test('emits colour when FORCE_COLOR is set even without a TTY', () => {
+      setEnv('FORCE_COLOR', '1');
+      process.stdout.isTTY = false;
+
+      match(renderPlan(...breaching()), redMarker);
+    });
+
+    test('FORCE_COLOR overrides CI', () => {
+      setEnv('FORCE_COLOR', '1');
+      setEnv('CI', 'true');
+      process.stdout.isTTY = false;
+
+      match(renderPlan(...breaching()), redMarker);
+    });
+
+    test('NO_COLOR suppresses colour even on an interactive terminal', () => {
+      setEnv('NO_COLOR', '1');
+      process.stdout.isTTY = true;
+
+      doesNotMatch(renderPlan(...breaching()), ansi);
+    });
+
+    test('NO_COLOR wins over FORCE_COLOR', () => {
+      setEnv('NO_COLOR', '1');
+      setEnv('FORCE_COLOR', '1');
+      process.stdout.isTTY = true;
 
       doesNotMatch(renderPlan(...breaching()), ansi);
     });
