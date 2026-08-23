@@ -97,6 +97,15 @@ describe('analysePlan', () => {
       eq(result.breaches[0].node, b);
     });
 
+    test('keeps the worst node even when a smaller divergence is walked afterwards', () => {
+      const child = node({ estimatedRows: 1, actualRows: 100 });
+      const root = node({ estimatedRows: 1, actualRows: 500, children: [child] });
+      const result = analysePlan(root, { rowEstimateTolerance: 10 });
+      eq(result.breaches.length, 1);
+      eq(result.breaches[0].node, root);
+      eq(result.breaches[0].observed, 500);
+    });
+
     test('is skipped when the limit is not set', () => {
       const root = node({ estimatedRows: 1, actualRows: 10000 });
       const result = analysePlan(root, {});
