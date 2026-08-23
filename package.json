@@ -1,6 +1,6 @@
 {
   "name": "drizzle-explain",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Performance-test Drizzle ORM queries by running them through EXPLAIN ANALYZE and asserting the plan is within tolerance",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
