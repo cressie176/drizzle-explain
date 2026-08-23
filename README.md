@@ -86,14 +86,14 @@ test('findReservationsByRoom stays cheap', async () => {
 
 ## API
 
-### `createExplain(driver, defaults?)`
+### createExplain(driver, defaults?)
 
 Creates an `explain` function bound to a driver and a set of default limits.
 
 - **driver** — a database-specific driver (see [Drivers](#drivers)), e.g. `postgresDriver(pool)`.
 - **defaults** — `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, applied to every query unless overridden per call. `drizzle-explain` ships no built-in defaults; you decide what "acceptable" means for your application (see [Choosing limits](#choosing-limits)).
 
-### `explain(fn, overrides?)`
+### explain(fn, overrides?)
 
 Runs the query returned by `fn` through `EXPLAIN ANALYZE` and returns an analysis.
 
