@@ -17,6 +17,10 @@ When working an issue:
 5. **Commit when the task is done — don't let work pile up.** As soon as an issue (or a self-contained sub-task) is finished and its tests pass, make a single focused commit for it before starting the next one. Never batch several completed tasks into one large uncommitted heap; each logical change should land in its own commit so history stays reviewable and unrelated changes don't get entangled across shared files.
 6. **Do not close the issue.** The maintainer (Steve) reviews and approves; close only after explicit approval.
 
+## Documentation style
+
+- **Never use backticks (`` ` ``) in Markdown headings or table cells.** They render inconsistently and add visual noise. Write the plain name instead — e.g. a heading `### disallowOperations`, not `` ### `disallowOperations` ``, and a table cell `SEQ_SCAN`, not `` `SEQ_SCAN` ``. Backticks for inline code are fine everywhere else (prose, lists, blockquotes).
+
 ## Parallel worktrees
 
 Issues are worked in separate git worktrees so multiple agents can run at once, but only where the issue's Parallelisation block permits it. Dependencies gate the rest: project setup blocks everything; the plan-node contract blocks the core and drivers; and so on. Always check the issue before assuming it can run alongside another.
