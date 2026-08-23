@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+const { equal, ok } = require('node:assert/strict');
 const { before, after, describe, test } = require('node:test');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
 const { eq } = require('drizzle-orm');
@@ -31,7 +31,7 @@ describe('mariadbDriver', () => {
     await driver.explain((db) => db.insert(widgets).values({ id: 99, name: 'z', quantity: 999 }));
 
     const [rows] = await client.query('SELECT COUNT(*) AS total FROM widgets WHERE id = 99');
-    assert.equal(Number(rows[0].total), 0);
+    equal(Number(rows[0].total), 0);
   });
 
   test('reports estimated rows, actual rows and actual time on access nodes', async () => {
@@ -39,11 +39,11 @@ describe('mariadbDriver', () => {
     const [statement] = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.quantity, 20)));
 
     const accessNodes = flatten(statement.root).filter((node) => node.type.includes('widgets'));
-    assert.ok(accessNodes.length > 0);
+    ok(accessNodes.length > 0);
     for (const node of accessNodes) {
-      assert.equal(typeof node.estimatedRows, 'number');
-      assert.equal(typeof node.actualRows, 'number');
-      assert.equal(typeof node.actualTimeMs, 'number');
+      equal(typeof node.estimatedRows, 'number');
+      equal(typeof node.actualRows, 'number');
+      equal(typeof node.actualTimeMs, 'number');
     }
   });
 
@@ -51,30 +51,30 @@ describe('mariadbDriver', () => {
     const driver = mariadbDriver(client);
     const [statement] = await driver.explain((db) => db.select().from(widgets));
 
-    assert.equal(typeof statement.root.actualTimeMs, 'number');
+    equal(typeof statement.root.actualTimeMs, 'number');
   });
 
   test('reports a numeric cost on the root query block so maxCost can be checked', async () => {
     const driver = mariadbDriver(client);
     const [statement] = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.quantity, 20)));
 
-    assert.equal(typeof statement.root.cost, 'number');
-    assert.ok(statement.root.cost > 0);
+    equal(typeof statement.root.cost, 'number');
+    ok(statement.root.cost > 0);
   });
 
   test('preserves the unmodified MariaDB plan', async () => {
     const driver = mariadbDriver(client);
     const [statement] = await driver.explain((db) => db.select().from(widgets));
 
-    assert.ok(statement.plan.query_block);
-    assert.equal(statement.plan.query_block.select_id, 1);
+    ok(statement.plan.query_block);
+    equal(statement.plan.query_block.select_id, 1);
   });
 
   test('returns one statement per executed query', async () => {
     const driver = mariadbDriver(client);
     const statements = await driver.explain((db) => db.select().from(widgets));
 
-    assert.equal(statements.length, 1);
+    equal(statements.length, 1);
   });
 });
 

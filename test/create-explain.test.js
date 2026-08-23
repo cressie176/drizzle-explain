@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+const { equal: eq, deepEqual: deq, match, rejects } = require('node:assert/strict');
 const { describe, test } = require('node:test');
 const { createExplain } = require('../lib');
 
@@ -20,8 +20,8 @@ describe('createExplain', () => {
 
     const analysis = await explain(() => {});
 
-    assert.equal(analysis.passed, true);
-    assert.equal(analysis.message, '');
+    eq(analysis.passed, true);
+    eq(analysis.message, '');
   });
 
   test('fails and renders the annotated plan when a limit is breached', async () => {
@@ -29,8 +29,8 @@ describe('createExplain', () => {
 
     const analysis = await explain(() => {});
 
-    assert.equal(analysis.passed, false);
-    assert.match(analysis.message, /cost 62431 exceeds limit 100/);
+    eq(analysis.passed, false);
+    match(analysis.message, /cost 62431 exceeds limit 100/);
   });
 
   test('exposes the effective limits after merging overrides over defaults', async () => {
@@ -41,7 +41,7 @@ describe('createExplain', () => {
 
     const analysis = await explain(() => {}, { maxCost: 500 });
 
-    assert.deepEqual(analysis.limits, { maxCost: 500, rowEstimateTolerance: 10 });
+    deq(analysis.limits, { maxCost: 500, rowEstimateTolerance: 10 });
   });
 
   test('reports the raw, unmodified vendor plan', async () => {
@@ -50,13 +50,13 @@ describe('createExplain', () => {
 
     const analysis = await explain(() => {});
 
-    assert.equal(analysis.plan, rawPlan);
+    eq(analysis.plan, rawPlan);
   });
 
   test('throws when the callback executes no statement', async () => {
     const explain = createExplain(stubDriver([]));
 
-    await assert.rejects(
+    await rejects(
       explain(() => {}),
       /exactly one statement/,
     );
@@ -65,7 +65,7 @@ describe('createExplain', () => {
   test('throws when the callback executes more than one statement', async () => {
     const explain = createExplain(stubDriver([statement(node({})), statement(node({}))]));
 
-    await assert.rejects(
+    await rejects(
       explain(() => {}),
       /exactly one statement/,
     );
@@ -76,7 +76,7 @@ describe('createExplain', () => {
 
     const analysis = await explain(() => {});
 
-    assert.equal(analysis.passed, false);
+    eq(analysis.passed, false);
   });
 
   test('skips a limit the driver cannot supply a signal for', async () => {
@@ -84,6 +84,6 @@ describe('createExplain', () => {
 
     const analysis = await explain(() => {});
 
-    assert.equal(analysis.passed, true);
+    eq(analysis.passed, true);
   });
 });

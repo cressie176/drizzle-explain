@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+const { equal, deepEqual: deq, ok, rejects } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
 const { eq } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
@@ -30,7 +30,7 @@ describe('postgresDriver', () => {
 
     const statements = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.id, 2)));
 
-    assert.equal(statements.length, 1);
+    equal(statements.length, 1);
   });
 
   test('normalized root carries cost, estimatedRows, actualRows and actualTimeMs', async () => {
@@ -39,12 +39,12 @@ describe('postgresDriver', () => {
     const [statement] = await driver.explain((db) => db.select().from(widgets));
     const { root } = statement;
 
-    assert.equal(root.type, 'Seq Scan');
-    assert.equal(typeof root.cost, 'number');
-    assert.equal(typeof root.estimatedRows, 'number');
-    assert.equal(typeof root.actualRows, 'number');
-    assert.equal(typeof root.actualTimeMs, 'number');
-    assert.deepEqual(root.children, []);
+    equal(root.type, 'Seq Scan');
+    equal(typeof root.cost, 'number');
+    equal(typeof root.estimatedRows, 'number');
+    equal(typeof root.actualRows, 'number');
+    equal(typeof root.actualTimeMs, 'number');
+    deq(root.children, []);
   });
 
   test('plan holds the unmodified PostgreSQL EXPLAIN output', async () => {
@@ -52,9 +52,9 @@ describe('postgresDriver', () => {
 
     const [statement] = await driver.explain((db) => db.select().from(widgets));
 
-    assert.ok(Array.isArray(statement.plan));
-    assert.equal(typeof statement.plan[0].Plan['Node Type'], 'string');
-    assert.equal(typeof statement.plan[0]['Execution Time'], 'number');
+    ok(Array.isArray(statement.plan));
+    equal(typeof statement.plan[0].Plan['Node Type'], 'string');
+    equal(typeof statement.plan[0]['Execution Time'], 'number');
   });
 
   test('a seq scan on an unindexed column reports a measurable cost', async () => {
@@ -62,8 +62,8 @@ describe('postgresDriver', () => {
 
     const [statement] = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.name, 'beta')));
 
-    assert.equal(statement.root.type, 'Seq Scan');
-    assert.ok(statement.root.cost > 0);
+    equal(statement.root.type, 'Seq Scan');
+    ok(statement.root.cost > 0);
   });
 
   test('a write run through the driver leaves the database unchanged', async () => {
@@ -72,14 +72,14 @@ describe('postgresDriver', () => {
     await driver.explain((db) => db.insert(widgets).values({ id: 99, name: 'ephemeral' }));
 
     const { rows } = await pool.query('SELECT id FROM widgets WHERE id = 99');
-    assert.deepEqual(rows, []);
+    deq(rows, []);
   });
 
   test('rolls back and releases the connection when run throws', async () => {
     const driver = postgresDriver(pool);
     const boom = new Error('boom');
 
-    await assert.rejects(
+    await rejects(
       driver.explain(async (db) => {
         await db.insert(widgets).values({ id: 100, name: 'doomed' });
         throw boom;
@@ -88,7 +88,7 @@ describe('postgresDriver', () => {
     );
 
     const { rows } = await pool.query('SELECT id FROM widgets WHERE id = 100');
-    assert.deepEqual(rows, []);
-    assert.equal(pool.idleCount, pool.totalCount);
+    deq(rows, []);
+    equal(pool.idleCount, pool.totalCount);
   });
 });

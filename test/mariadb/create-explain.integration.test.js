@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+const { equal, match } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
 const { eq } = require('drizzle-orm');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
@@ -32,8 +32,8 @@ describe('createExplain over the MariaDB driver', () => {
 
     const analysis = await explain((db) => db.select().from(widgets).where(eq(widgets.quantity, 20)));
 
-    assert.equal(analysis.passed, true, analysis.message);
-    assert.equal(analysis.message, '');
+    equal(analysis.passed, true, analysis.message);
+    equal(analysis.message, '');
   });
 
   test('fails when the plan cost exceeds a tight maxCost', async () => {
@@ -41,8 +41,8 @@ describe('createExplain over the MariaDB driver', () => {
 
     const analysis = await explain((db) => db.select().from(widgets).where(eq(widgets.quantity, 20)));
 
-    assert.equal(analysis.passed, false);
-    assert.match(analysis.message, /exceeds limit 0/);
+    equal(analysis.passed, false);
+    match(analysis.message, /exceeds limit 0/);
   });
 
   test('rolls back a write executed through the query callback', async () => {
@@ -51,6 +51,6 @@ describe('createExplain over the MariaDB driver', () => {
     await explain((db) => db.insert(widgets).values({ id: 99, name: 'z', quantity: 999 }));
 
     const [rows] = await client.query('SELECT COUNT(*) AS total FROM widgets WHERE id = 99');
-    assert.equal(Number(rows[0].total), 0);
+    equal(Number(rows[0].total), 0);
   });
 });

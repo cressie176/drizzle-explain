@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+const { equal, deepEqual: deq, match, ok } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
 const { eq } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
@@ -31,9 +31,9 @@ describe('createExplain over the PostgreSQL driver', () => {
 
     const analysis = await explain((db) => db.select().from(widgets).where(eq(widgets.id, 2)));
 
-    assert.equal(analysis.passed, true, analysis.message);
-    assert.equal(analysis.message, '');
-    assert.ok(Array.isArray(analysis.plan));
+    equal(analysis.passed, true, analysis.message);
+    equal(analysis.message, '');
+    ok(Array.isArray(analysis.plan));
   });
 
   test('fails when the plan cost exceeds a tight maxCost', async () => {
@@ -41,8 +41,8 @@ describe('createExplain over the PostgreSQL driver', () => {
 
     const analysis = await explain((db) => db.select().from(widgets));
 
-    assert.equal(analysis.passed, false);
-    assert.match(analysis.message, /exceeds limit 0/);
+    equal(analysis.passed, false);
+    match(analysis.message, /exceeds limit 0/);
   });
 
   test('rolls back a write executed through the query callback', async () => {
@@ -51,6 +51,6 @@ describe('createExplain over the PostgreSQL driver', () => {
     await explain((db) => db.insert(widgets).values({ id: 42, name: 'ephemeral' }));
 
     const { rows } = await pool.query('SELECT id FROM widgets WHERE id = 42');
-    assert.deepEqual(rows, []);
+    deq(rows, []);
   });
 });
