@@ -1,0 +1,22 @@
+{
+  "name": "hotel-chain-drizzle-seed-maria",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MariaDB worked example for drizzle-explain: a hotel chain seeded with drizzle-seed and performance-tested",
+  "scripts": {
+    "seed": "tsx seed.ts",
+    "test": "node --import tsx --test --test-concurrency=1 performance.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-explain": "file:../..",
+    "drizzle-orm": "^0.45.2",
+    "drizzle-seed": "^0.3.1",
+    "mysql2": "^3.11.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.3"
+  }
+}
