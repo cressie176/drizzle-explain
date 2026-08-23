@@ -14,7 +14,8 @@ When working an issue:
 2. **Check the README after finishing the task.** If the implementation diverged from what the README describes, either fix the code to match, or update the README to reflect a deliberate, better decision — never leave them inconsistent. Record any divergence in the issue's Notes.
 3. **Keep to the files the issue says it owns.** Each issue lists a **Parallelisation** block stating what it depends on, what it can safely run alongside, and which files it owns. Respect it so parallel worktrees don't collide. Not every issue can run in parallel — the issue says which.
 4. **Update progress on the GitHub issue** as you go — tick the task/acceptance checkboxes and add a Notes entry for any implementation change.
-5. **Do not close the issue.** The maintainer (Steve) reviews and approves; close only after explicit approval.
+5. **Commit when the task is done — don't let work pile up.** As soon as an issue (or a self-contained sub-task) is finished and its tests pass, make a single focused commit for it before starting the next one. Never batch several completed tasks into one large uncommitted heap; each logical change should land in its own commit so history stays reviewable and unrelated changes don't get entangled across shared files.
+6. **Do not close the issue.** The maintainer (Steve) reviews and approves; close only after explicit approval.
 
 ## Parallel worktrees
 
