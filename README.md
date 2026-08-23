@@ -237,15 +237,15 @@ These are illustrative — every database has its own equivalents. The principle
 
 ## Worked examples
 
-Complete, runnable examples live in [`examples`](examples). The first uses PostgreSQL with drizzle-seed and is described below; more are planned:
+Complete, runnable examples live in [`examples`](examples). Both drizzle-seed examples model the same hotel booking system against different databases; a faster `COPY`-based variant is planned:
 
 | Example | Database | Seeding | Status |
 |---|---|---|---|
-| [hotel-chain-postgres](examples/hotel-chain-postgres) | PostgreSQL | drizzle-seed | available |
-| hotel-chain-mariadb | MariaDB | drizzle-seed | planned |
-| hotel-chain-postgres-copy | PostgreSQL | generated SQL + COPY | planned |
+| [hotel-chain-drizzle-seed-postgres](examples/hotel-chain-drizzle-seed-postgres) | PostgreSQL | drizzle-seed | available |
+| [hotel-chain-drizzle-seed-maria](examples/hotel-chain-drizzle-seed-maria) | MariaDB | drizzle-seed | available |
+| hotel-chain-copy-postgres | PostgreSQL | generated SQL + COPY | planned |
 
-### hotel-chain-postgres
+### hotel-chain-drizzle-seed-postgres
 
 It models a hotel booking system — `chain → hotel → room → reservation` — seeded to a production-like shape with drizzle-seed, and performance-tests a handful of representative queries.
 
@@ -313,9 +313,9 @@ The core walks that normalized tree — it never sees a vendor-specific plan key
 |------------------------|----------------------------|---------------------------|
 | Import                 | drizzle-explain/postgres   | drizzle-explain/mariadb   |
 | rowEstimateTolerance   | ✓                          | ✓                         |
-| maxCost                | ✓                          | ?                         |
+| maxCost                | ✓                          | ✓                         |
 
-`maxCost` on MariaDB is unconfirmed — MariaDB's `ANALYZE FORMAT=JSON` reliably reports estimated and actual rows (so `rowEstimateTolerance` works), but whether it exposes a usable per-node plan cost is being verified against a real instance before v1. Until then, treat `maxCost` as PostgreSQL-only.
+Both databases expose the signals `drizzle-explain` needs. PostgreSQL's `EXPLAIN (ANALYZE, FORMAT JSON)` and MariaDB's `ANALYZE FORMAT=JSON` each report estimated rows, actual rows, and a plan cost — MariaDB carries a per-node `cost` on the query block and its access nodes (verified against MariaDB 11.8), so `maxCost` is enforced on both. A trivial `const` primary-key lookup is the one case where MariaDB omits a cost; there the analyser simply skips `maxCost` rather than failing.
 
 ### Why not SQLite
 

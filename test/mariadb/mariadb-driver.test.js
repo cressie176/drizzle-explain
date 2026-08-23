@@ -54,13 +54,12 @@ describe('mariadbDriver', () => {
     assert.equal(typeof statement.root.actualTimeMs, 'number');
   });
 
-  test('omits cost on every node so maxCost is skipped', async () => {
+  test('reports a numeric cost on the root query block so maxCost can be checked', async () => {
     const driver = mariadbDriver(client);
-    const [statement] = await driver.explain((db) => db.select().from(widgets));
+    const [statement] = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.quantity, 20)));
 
-    for (const node of flatten(statement.root)) {
-      assert.equal('cost' in node, false);
-    }
+    assert.equal(typeof statement.root.cost, 'number');
+    assert.ok(statement.root.cost > 0);
   });
 
   test('preserves the unmodified MariaDB plan', async () => {
