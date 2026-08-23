@@ -1,0 +1,17 @@
+{
+  "name": "hotel-chain",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "drizzle-explain worked examples: one hotel booking system, seeded with drizzle-seed, performance-tested against PostgreSQL and MariaDB",
+  "workspaces": ["drizzle-seed-postgres", "drizzle-seed-mariadb"],
+  "scripts": {
+    "seed": "npm run seed --workspaces",
+    "seed:postgres": "npm run seed --workspace drizzle-seed-postgres",
+    "seed:mariadb": "npm run seed --workspace drizzle-seed-mariadb",
+    "test": "npm run test --workspaces",
+    "test:postgres": "npm run test --workspace drizzle-seed-postgres",
+    "test:mariadb": "npm run test --workspace drizzle-seed-mariadb",
+    "typecheck": "npm run typecheck --workspaces"
+  }
+}

@@ -6,10 +6,11 @@
   "description": "drizzle-explain worked example: a hotel booking system seeded with drizzle-seed and performance-tested against PostgreSQL",
   "scripts": {
     "seed": "tsx seed.ts",
-    "test": "tsx --test performance.test.ts"
+    "test": "node --import tsx --test --test-concurrency=1 performance.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "drizzle-explain": "file:../..",
+    "drizzle-explain": "file:../../..",
     "drizzle-orm": "^0.45.2",
     "drizzle-seed": "^0.3.1",
     "pg": "^8.13.3"

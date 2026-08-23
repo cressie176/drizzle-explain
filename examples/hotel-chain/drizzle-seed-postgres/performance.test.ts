@@ -3,7 +3,7 @@ import { after, describe, test } from 'node:test';
 import { createExplain } from 'drizzle-explain';
 import { postgresDriver } from 'drizzle-explain/postgres';
 import type { Driver, Limits } from 'drizzle-explain';
-import { connect } from './database.ts';
+import { connect } from './connect.ts';
 import type { Db } from './queries.ts';
 import * as queries from './queries.ts';
 

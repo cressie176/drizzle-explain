@@ -289,17 +289,17 @@ These are illustrative — every database has its own equivalents. The principle
 
 ## Worked examples
 
-Complete, runnable examples live in [`examples`](examples). Both drizzle-seed examples model the same hotel booking system against different databases; a faster `COPY`-based variant is planned:
+The [`hotel-chain`](examples/hotel-chain) example models one hotel booking system and performance-tests it against both databases from a single npm workspace. The two drivers share a domain, a seeding shape, and the `THRESHOLDS`-map test pattern; only the connection and the dialect-specific schema differ:
 
 | Example | Database | Seeding | Status |
 |---|---|---|---|
-| [hotel-chain-drizzle-seed-postgres](examples/hotel-chain-drizzle-seed-postgres) | PostgreSQL | drizzle-seed | available |
-| [hotel-chain-drizzle-seed-maria](examples/hotel-chain-drizzle-seed-maria) | MariaDB | drizzle-seed | available |
-| hotel-chain-copy-postgres | PostgreSQL | generated SQL + COPY | planned |
+| [hotel-chain/drizzle-seed-postgres](examples/hotel-chain/drizzle-seed-postgres) | PostgreSQL | drizzle-seed | available |
+| [hotel-chain/drizzle-seed-mariadb](examples/hotel-chain/drizzle-seed-mariadb) | MariaDB | drizzle-seed | available |
+| hotel-chain (COPY variant) | PostgreSQL | generated SQL + COPY | planned |
 
-### hotel-chain-drizzle-seed-postgres
+### hotel-chain
 
-It models a hotel booking system — `chain → hotel → room → reservation` — seeded to a production-like shape with drizzle-seed, and performance-tests a handful of representative queries.
+It models a hotel booking system — `chain → hotel → room → reservation` — seeded to a production-like shape with drizzle-seed, and performance-tests a handful of representative queries against both PostgreSQL and MariaDB.
 
 The schema skews room grades (most rooms `standard`, few `penthouse`) and concentrates reservations in summer, so date-range and grade predicates have realistically different selectivity — which is what makes the optimizer's plan choices interesting to test.
 

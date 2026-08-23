@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { seed } from 'drizzle-seed';
-import { connect } from './database.ts';
+import { connect } from './connect.ts';
 import * as schema from './schema.ts';
 
 const DDL = sql`
