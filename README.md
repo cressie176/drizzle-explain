@@ -1,11 +1,11 @@
 # drizzle-explain
 
-<!--
 [![NPM Version](https://img.shields.io/npm/v/drizzle-explain)](https://www.npmjs.com/package/drizzle-explain)
 [![CI](https://github.com/cressie176/drizzle-explain/actions/workflows/qa.yml/badge.svg)](https://github.com/cressie176/drizzle-explain/actions/workflows/qa.yml)
-[![Coverage](https://codecov.io/gh/cressie176/drizzle-explain/branch/main/graph/badge.svg)](https://codecov.io/gh/cressie176/drizzle-explain)
 [![Node.js](https://img.shields.io/node/v/drizzle-explain)](https://nodejs.org)
 [![License](https://img.shields.io/npm/l/drizzle-explain)](LICENSE)
+<!--
+[![Coverage](https://codecov.io/gh/cressie176/drizzle-explain/branch/main/graph/badge.svg)](https://codecov.io/gh/cressie176/drizzle-explain)
 -->
 
 Performance-test your [Drizzle ORM](https://orm.drizzle.team/) queries by running them through `EXPLAIN ANALYZE` and asserting the plan is within tolerance — before a bad plan reaches production.
@@ -134,6 +134,8 @@ Seq Scan on reservations  (cost=0..62431 rows=10 actual=10)  ✘ cost 62431 > 10
 ```
 
 The raw plan is always available in `analysis.plan` if you want to log or inspect the full detail; it is the database's native EXPLAIN output, unmodified.
+
+The `✘` markers are printed in red on an interactive terminal, and left uncoloured when output is piped or `CI` is set. Most test runners (including `node --test`) capture the subprocess stdout, which hides the terminal from the renderer and disables colour; set `FORCE_COLOR=1` to force it back on, or `NO_COLOR=1` to turn it off everywhere. The plain text is identical either way, so assertions never depend on colour.
 
 ## What it checks
 
