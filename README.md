@@ -4,9 +4,7 @@
 [![CI](https://github.com/cressie176/drizzle-explain/actions/workflows/qa.yml/badge.svg)](https://github.com/cressie176/drizzle-explain/actions/workflows/qa.yml)
 [![Node.js](https://img.shields.io/node/v/drizzle-explain)](https://nodejs.org)
 [![License](https://img.shields.io/npm/l/drizzle-explain)](LICENSE)
-<!--
 [![Coverage](https://codecov.io/gh/cressie176/drizzle-explain/branch/main/graph/badge.svg)](https://codecov.io/gh/cressie176/drizzle-explain)
--->
 
 Performance-test your [Drizzle ORM](https://orm.drizzle.team/) queries by running them through `EXPLAIN ANALYZE` and asserting the plan is within tolerance — before a bad plan reaches production.
 
