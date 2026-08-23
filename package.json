@@ -1,0 +1,69 @@
+{
+  "name": "drizzle-explain",
+  "version": "1.0.0",
+  "description": "Performance-test Drizzle ORM queries by running them through EXPLAIN ANALYZE and asserting the plan is within tolerance",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./postgres": {
+      "types": "./postgres.d.ts",
+      "default": "./postgres.js"
+    },
+    "./mariadb": {
+      "types": "./mariadb.d.ts",
+      "default": "./mariadb.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 'test/**/*.test.js'",
+    "coverage": "node --test --test-concurrency=1 --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=lcov.info 'test/**/*.test.js'",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down"
+  },
+  "peerDependencies": {
+    "drizzle-orm": ">=0.36"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/pg": "^8.11.11",
+    "drizzle-orm": "^0.45.2",
+    "lefthook": "^1.11.13",
+    "mysql2": "^3.11.0",
+    "pg": "^8.13.3",
+    "typescript": "^5.6.3"
+  },
+  "files": [
+    "lib",
+    "postgres.js",
+    "postgres.d.ts",
+    "mariadb.js",
+    "mariadb.d.ts"
+  ],
+  "keywords": [
+    "drizzle",
+    "drizzle-orm",
+    "explain",
+    "explain-analyze",
+    "query-plan",
+    "performance",
+    "postgresql",
+    "mariadb",
+    "typescript"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cressie176/drizzle-explain"
+  }
+}

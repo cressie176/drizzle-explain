@@ -1,0 +1,29 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: drizzle_explain
+      POSTGRES_PASSWORD: drizzle_explain
+      POSTGRES_DB: drizzle_explain
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drizzle_explain"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mariadb:
+    image: mariadb:11
+    environment:
+      MARIADB_USER: drizzle_explain
+      MARIADB_PASSWORD: drizzle_explain
+      MARIADB_DATABASE: drizzle_explain
+      MARIADB_ROOT_PASSWORD: drizzle_explain
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

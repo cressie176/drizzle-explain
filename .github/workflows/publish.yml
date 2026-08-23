@@ -1,0 +1,65 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: drizzle_explain
+          POSTGRES_PASSWORD: drizzle_explain
+          POSTGRES_DB: drizzle_explain
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_USER: drizzle_explain
+          MARIADB_PASSWORD: drizzle_explain
+          MARIADB_DATABASE: drizzle_explain
+          MARIADB_ROOT_PASSWORD: drizzle_explain
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npx biome ci .
+      - run: npm run typecheck
+      - run: npm test
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: drizzle_explain
+          PGPASSWORD: drizzle_explain
+          PGDATABASE: drizzle_explain
+          MARIADB_HOST: 127.0.0.1
+          MARIADB_PORT: 3306
+          MARIADB_USER: drizzle_explain
+          MARIADB_PASSWORD: drizzle_explain
+          MARIADB_DATABASE: drizzle_explain
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
