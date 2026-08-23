@@ -98,10 +98,17 @@ async function reportCounts(db: ReturnType<typeof drizzle>) {
 async function run() {
   const pool = connect();
   const db = drizzle(pool);
+
+  console.log('[1/3] Recreating tables…');
   await db.execute(DDL);
+
+  console.log('[2/3] Seeding data with drizzle-seed — this takes a minute or two, please wait…');
   await seedShapedData(db);
+
+  console.log('[3/3] Refreshing statistics (ANALYZE)…');
   await db.execute(sql`ANALYZE;`);
-  console.log('seeded', await reportCounts(db));
+
+  console.log('Seed complete:', await reportCounts(db));
   await pool.end();
 }
 

@@ -8,9 +8,16 @@ const TABLES = ['reservations', 'rooms', 'hotels', 'chains'] as const;
 
 async function main() {
   const connection = await connect();
+
+  console.log('[1/3] Recreating tables…');
   await recreateTables(connection);
+
+  console.log('[2/3] Seeding data with drizzle-seed — this takes a minute or two, please wait…');
   await seedData(connection);
+
+  console.log('[3/3] Refreshing statistics (ANALYZE TABLE)…');
   await refreshStatistics(connection);
+
   await connection.end();
   console.log('Seed complete.');
 }
