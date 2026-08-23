@@ -3,7 +3,8 @@ const { after, before, describe, test } = require('node:test');
 const { eq } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
 const { postgresDriver } = require('../../postgres');
-const { connectToTestDatabase } = require('./connect-to-test-database');
+const { Operation } = require('../../lib/operation');
+const { connect } = require('./connect');
 
 const widgets = pgTable('widgets', {
   id: integer('id'),
@@ -14,7 +15,7 @@ describe('postgresDriver', () => {
   let pool;
 
   before(async () => {
-    pool = connectToTestDatabase();
+    pool = connect();
     await pool.query('DROP TABLE IF EXISTS widgets');
     await pool.query('CREATE TABLE IF NOT EXISTS widgets (id integer, name text)');
     await pool.query("INSERT INTO widgets (id, name) VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')");
@@ -25,7 +26,7 @@ describe('postgresDriver', () => {
     await pool.end();
   });
 
-  test('returns one ExplainedStatement per generated statement', async () => {
+  test('returns one statement per executed query', async () => {
     const driver = postgresDriver(pool);
 
     const statements = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.id, 2)));
@@ -47,7 +48,7 @@ describe('postgresDriver', () => {
     deq(root.children, []);
   });
 
-  test('plan holds the unmodified PostgreSQL EXPLAIN output', async () => {
+  test('preserves the unmodified PostgreSQL plan', async () => {
     const driver = postgresDriver(pool);
 
     const [statement] = await driver.explain((db) => db.select().from(widgets));
@@ -66,7 +67,15 @@ describe('postgresDriver', () => {
     ok(statement.root.cost > 0);
   });
 
-  test('a write run through the driver leaves the database unchanged', async () => {
+  test('classifies a full-table scan as the normalized SEQ_SCAN operation', async () => {
+    const driver = postgresDriver(pool);
+
+    const [statement] = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.name, 'beta')));
+
+    equal(statement.root.operation, Operation.SEQ_SCAN);
+  });
+
+  test('leaves the database unchanged after a write', async () => {
     const driver = postgresDriver(pool);
 
     await driver.explain((db) => db.insert(widgets).values({ id: 99, name: 'ephemeral' }));

@@ -46,6 +46,23 @@ describe('renderPlan', () => {
     );
   });
 
+  test('summarises a disallowOperations breach and annotates the offending node with its vendor type', () => {
+    const root = { type: 'Seq Scan', cost: 62431, estimatedRows: 10, actualRows: 10, children: [] };
+    const analysis = {
+      passed: false,
+      breaches: [{ node: root, limit: 'disallowOperations', threshold: ['SEQ_SCAN'], observed: 'SEQ_SCAN' }],
+    };
+
+    const message = render(root, analysis);
+
+    eq(
+      message,
+      ['✘ disallowed operation: Seq Scan', '', 'Seq Scan  (cost=62431 rows=10 actual=10)  ✘ Seq Scan not allowed'].join(
+        '\n',
+      ),
+    );
+  });
+
   test('names every breached limit in the summary', () => {
     const root = { type: 'Seq Scan', cost: 62431, estimatedRows: 1, actualRows: 340, children: [] };
     const analysis = {

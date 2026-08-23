@@ -1,6 +1,6 @@
 const { Pool } = require('pg');
 
-function connectToTestDatabase() {
+function connect() {
   return new Pool({
     host: process.env.PGHOST ?? 'localhost',
     port: process.env.PGPORT ?? 5432,
@@ -10,4 +10,4 @@ function connectToTestDatabase() {
   });
 }
 
-module.exports = { connectToTestDatabase };
+module.exports = { connect };

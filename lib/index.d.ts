@@ -1,5 +1,18 @@
+export enum Operation {
+  SEQ_SCAN = 'SEQ_SCAN',
+  INDEX_SCAN = 'INDEX_SCAN',
+  BITMAP_SCAN = 'BITMAP_SCAN',
+  NESTED_LOOP = 'NESTED_LOOP',
+  HASH_JOIN = 'HASH_JOIN',
+  MERGE_JOIN = 'MERGE_JOIN',
+  SORT = 'SORT',
+  AGGREGATE = 'AGGREGATE',
+  OTHER = 'OTHER',
+}
+
 export interface PlanNode {
   type: string;
+  operation?: Operation;
   cost?: number;
   estimatedRows?: number;
   actualRows?: number;
@@ -10,6 +23,8 @@ export interface PlanNode {
 export interface Limits {
   maxCost?: number;
   rowEstimateTolerance?: number;
+  disallowOperations?: Operation[];
+  allowOperations?: Operation[];
 }
 
 export interface Analysis {

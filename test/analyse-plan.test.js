@@ -1,6 +1,7 @@
 const { equal: eq, deepEqual: deq } = require('node:assert/strict');
 const { describe, test } = require('node:test');
 const { analysePlan } = require('../lib/analyse-plan');
+const { Operation } = require('../lib/operation');
 
 function node(overrides = {}) {
   return { type: 'Seq Scan', children: [], ...overrides };
@@ -136,6 +137,95 @@ describe('analysePlan', () => {
       const result = analysePlan(root, { rowEstimateTolerance: 10 });
       eq(result.passed, false);
       eq(result.breaches[0].node, breaching);
+    });
+  });
+
+  describe('disallowOperations', () => {
+    test('breaches when a node runs a disallowed operation', () => {
+      const root = node({ operation: Operation.SEQ_SCAN });
+      const result = analysePlan(root, { disallowOperations: [Operation.SEQ_SCAN] });
+      eq(result.passed, false);
+      eq(result.breaches.length, 1);
+      deq(result.breaches[0], {
+        node: root,
+        limit: 'disallowOperations',
+        threshold: [Operation.SEQ_SCAN],
+        observed: Operation.SEQ_SCAN,
+      });
+    });
+
+    test('breaches a disallowed operation on a deep child', () => {
+      const scan = node({ type: 'Seq Scan', operation: Operation.SEQ_SCAN });
+      const root = node({ type: 'Nested Loop', operation: Operation.NESTED_LOOP, children: [scan] });
+      const result = analysePlan(root, { disallowOperations: [Operation.SEQ_SCAN] });
+      eq(result.passed, false);
+      eq(result.breaches.length, 1);
+      eq(result.breaches[0].node, scan);
+    });
+
+    test('reports one breach per offending node', () => {
+      const first = node({ operation: Operation.SEQ_SCAN });
+      const second = node({ operation: Operation.SEQ_SCAN });
+      const root = node({ operation: Operation.NESTED_LOOP, children: [first, second] });
+      const result = analysePlan(root, { disallowOperations: [Operation.SEQ_SCAN] });
+      eq(result.breaches.length, 2);
+    });
+
+    test('passes when no node runs a disallowed operation', () => {
+      const root = node({ operation: Operation.INDEX_SCAN });
+      const result = analysePlan(root, { disallowOperations: [Operation.SEQ_SCAN] });
+      eq(result.passed, true);
+      deq(result.breaches, []);
+    });
+
+    test('skips nodes whose operation the driver could not classify', () => {
+      const root = node({ operation: undefined });
+      const result = analysePlan(root, { disallowOperations: [Operation.SEQ_SCAN] });
+      eq(result.passed, true);
+    });
+
+    test('is skipped when the limit is not set', () => {
+      const root = node({ operation: Operation.SEQ_SCAN });
+      const result = analysePlan(root, {});
+      eq(result.passed, true);
+    });
+
+    test('an empty list rejects nothing', () => {
+      const root = node({ operation: Operation.SEQ_SCAN });
+      const result = analysePlan(root, { disallowOperations: [] });
+      eq(result.passed, true);
+    });
+
+    test('allowOperations lifts the ban on a specific operation', () => {
+      const root = node({ operation: Operation.SEQ_SCAN });
+      const result = analysePlan(root, {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [Operation.SEQ_SCAN],
+      });
+      eq(result.passed, true);
+      deq(result.breaches, []);
+    });
+
+    test('allowOperations leaves the other disallowed operations banned', () => {
+      const scan = node({ type: 'Seq Scan', operation: Operation.SEQ_SCAN });
+      const loop = node({ type: 'Nested Loop', operation: Operation.NESTED_LOOP, children: [scan] });
+      const result = analysePlan(loop, {
+        disallowOperations: [Operation.SEQ_SCAN, Operation.NESTED_LOOP],
+        allowOperations: [Operation.SEQ_SCAN],
+      });
+      eq(result.passed, false);
+      eq(result.breaches.length, 1);
+      eq(result.breaches[0].node, loop);
+      eq(result.breaches[0].observed, Operation.NESTED_LOOP);
+    });
+
+    test('allowOperations has no effect on an operation that was not disallowed', () => {
+      const root = node({ operation: Operation.INDEX_SCAN });
+      const result = analysePlan(root, {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [Operation.INDEX_SCAN],
+      });
+      eq(result.passed, true);
     });
   });
 

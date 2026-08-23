@@ -1,6 +1,6 @@
 const mysql = require('mysql2/promise');
 
-function connectMariadb() {
+function connect() {
   return mysql.createConnection({
     host: process.env.MARIADB_HOST ?? '127.0.0.1',
     port: Number(process.env.MARIADB_PORT ?? 3306),
@@ -11,4 +11,4 @@ function connectMariadb() {
   });
 }
 
-module.exports = { connectMariadb };
+module.exports = { connect };

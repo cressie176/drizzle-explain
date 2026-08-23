@@ -2,9 +2,9 @@ const { equal, match } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
 const { eq } = require('drizzle-orm');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
-const { createExplain } = require('../../lib');
+const { createExplain, Operation } = require('../../lib');
 const { mariadbDriver } = require('../../mariadb');
-const { connectMariadb } = require('./connect-mariadb');
+const { connect } = require('./connect');
 
 const widgets = mysqlTable('widgets', {
   id: int('id').primaryKey(),
@@ -16,7 +16,7 @@ describe('createExplain over the MariaDB driver', () => {
   let client;
 
   before(async () => {
-    client = await connectMariadb();
+    client = await connect();
     await client.query('DROP TABLE IF EXISTS widgets');
     await client.query('CREATE TABLE widgets (id INT PRIMARY KEY, name VARCHAR(64), quantity INT)');
     await client.query("INSERT INTO widgets VALUES (1, 'a', 10), (2, 'b', 20), (3, 'c', 30)");
@@ -43,6 +43,25 @@ describe('createExplain over the MariaDB driver', () => {
 
     equal(analysis.passed, false);
     match(analysis.message, /exceeds limit 0/);
+  });
+
+  test('fails when the plan runs a disallowed operation', async () => {
+    const explain = createExplain(mariadbDriver(client), { disallowOperations: [Operation.SEQ_SCAN] });
+
+    const analysis = await explain((db) => db.select().from(widgets).where(eq(widgets.quantity, 20)));
+
+    equal(analysis.passed, false);
+    match(analysis.message, /disallowed operation:/);
+  });
+
+  test('a per-call allowOperations override permits an otherwise-disallowed operation', async () => {
+    const explain = createExplain(mariadbDriver(client), { disallowOperations: [Operation.SEQ_SCAN] });
+
+    const analysis = await explain((db) => db.select().from(widgets).where(eq(widgets.quantity, 20)), {
+      allowOperations: [Operation.SEQ_SCAN],
+    });
+
+    equal(analysis.passed, true, analysis.message);
   });
 
   test('rolls back a write executed through the query callback', async () => {

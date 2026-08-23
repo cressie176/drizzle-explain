@@ -23,10 +23,11 @@ If nobody added an index on `room_id`, PostgreSQL scans all 5 million rows to re
 
 ## The Solution
 
-`drizzle-explain` runs each query under `EXPLAIN (ANALYZE, FORMAT JSON)` inside a transaction that is always rolled back, then checks two hardware-independent signals from the plan:
+`drizzle-explain` runs each query under `EXPLAIN (ANALYZE, FORMAT JSON)` inside a transaction that is always rolled back, then checks the plan against a set of hardware-independent signals:
 
 - **cost** — the optimizer's own estimate of how expensive the plan is. A missing index shows up as a cost blowout.
 - **row-estimate tolerance** — how far the optimizer's row estimates are from reality. Bad estimates are what cause bad plans; catching them catches the *cause*, not just the symptom.
+- **disallowed operations** — the plan can be failed outright if it contains an operation you never want to see, such as a sequential scan. Off by default.
 
 ```ts
 import { createExplain } from 'drizzle-explain';
@@ -90,14 +91,14 @@ test('findReservationsByRoom stays cheap', async () => {
 Creates an `explain` function bound to a driver and a set of default limits.
 
 - **driver** — a database-specific driver (see [Drivers](#drivers)), e.g. `postgresDriver(pool)`.
-- **defaults** — `{ maxCost?, rowEstimateTolerance? }`, applied to every query unless overridden per call. `drizzle-explain` ships no built-in defaults; you decide what "acceptable" means for your application (see [Choosing limits](#choosing-limits)).
+- **defaults** — `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, applied to every query unless overridden per call. `drizzle-explain` ships no built-in defaults; you decide what "acceptable" means for your application (see [Choosing limits](#choosing-limits)).
 
 ### `explain(fn, overrides?)`
 
 Runs the query returned by `fn` through `EXPLAIN ANALYZE` and returns an analysis.
 
 - **fn** — `(db) => query`. Receives an instrumented Drizzle database and returns a single Drizzle query.
-- **overrides** — `{ maxCost?, rowEstimateTolerance? }`, merged over the defaults for this call only.
+- **overrides** — `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, merged over the defaults for this call only. To permit an operation your default bans for one specific query, pass `{ allowOperations: [Operation.SEQ_SCAN] }` — it lifts *only* that operation's ban for that call and leaves the rest of the default `disallowOperations` list intact (see [disallowOperations](#disallowoperations)).
 
 Exactly one statement must be executed per call. If `fn` runs zero or more than one statement, `explain` throws — performance-testing a single query is the unit of measurement.
 
@@ -110,6 +111,8 @@ interface Analysis {
   limits: {          // the effective limits after merging overrides
     maxCost?: number;
     rowEstimateTolerance?: number;
+    disallowOperations?: Operation[];
+    allowOperations?: Operation[];
   };
   plan: object;      // the raw, unmodified EXPLAIN output from the database
 }
@@ -153,6 +156,55 @@ This matters more than it first appears. The optimizer chooses a plan based on h
 Using a *ratio* rather than absolute counts means proportional data growth doesn't cause churn: as your data grows, estimate and actual scale together and the ratio holds steady. It only moves when the data changes *shape* — which is precisely when plans are at risk of flipping.
 
 When a node returns zero rows, the ratio is clamped (a divide-by-zero or "infinitely wrong" estimate isn't a useful signal), so an empty result never fails the check on its own.
+
+### disallowOperations
+
+A list of plan operations that should fail the query outright if they appear anywhere in the tree. The classic use is banning sequential/full-table scans on tables you expect to be indexed:
+
+```ts
+import { createExplain, Operation } from 'drizzle-explain';
+
+const explain = createExplain(postgresDriver(pool), { disallowOperations: [Operation.SEQ_SCAN] });
+```
+
+Where `maxCost` catches an expensive plan indirectly, this catches a specific *kind* of plan directly — a `Seq Scan` on a large table is one of the clearest signs of a missing or unused index, and this lets you assert on it by name rather than inferring it from cost.
+
+Operations are matched on a **normalized category**, not the database's own plan vocabulary, so the same limit works across drivers. The categories are exposed as the `Operation` enum:
+
+| `Operation` | Matches |
+|---|---|
+| `SEQ_SCAN` | sequential / full-table scan (PostgreSQL `Seq Scan`; MariaDB access type `ALL`/`index`) |
+| `INDEX_SCAN` | index scan (PostgreSQL `Index Scan`/`Index Only Scan`; MariaDB `ref`/`range`/`eq_ref`/`const`) |
+| `BITMAP_SCAN` | PostgreSQL bitmap heap/index scan |
+| `NESTED_LOOP` | nested-loop join |
+| `HASH_JOIN` | hash join |
+| `MERGE_JOIN` | merge / sort-merge join |
+| `SORT` | explicit sort |
+| `AGGREGATE` | grouping / aggregation |
+| `OTHER` | a recognised node with no dedicated category |
+
+Like `maxCost`, this check **defaults to off** — with `disallowOperations` unset, no plan is ever rejected on operation type. A node the driver couldn't classify is never treated as disallowed.
+
+### allowOperations
+
+`allowOperations` is the escape hatch for `disallowOperations`. It only ever *removes* an operation from the disallowed set — the effective ban is `disallowOperations` minus `allowOperations`. Because every operation is permitted by default, **setting `allowOperations` on its own (with no `disallowOperations`) does nothing**: there is no ban for it to lift. It is meaningful only as a **per-query override** against a `disallowOperations` default.
+
+This solves the awkward case where a global default bans several operations and one query legitimately needs one of them. Without `allowOperations` you'd have to re-declare the whole list minus the one you want; with it you name only the exception:
+
+```ts
+// default: ban both across every query
+const explain = createExplain(postgresDriver(pool), {
+  disallowOperations: [Operation.SEQ_SCAN, Operation.NESTED_LOOP],
+});
+
+// this one report genuinely scans a small lookup table — lift only the
+// SEQ_SCAN ban here; NESTED_LOOP stays disallowed for this query.
+const analysis = await explain((db) => summariseGrades(db), {
+  allowOperations: [Operation.SEQ_SCAN],
+});
+```
+
+Every such override is a place where someone looked at a plan and consciously accepted a specific operation for a specific query — the same discipline as a per-query `maxCost` override.
 
 ### What it does not check
 
@@ -296,7 +348,8 @@ A driver's only job is to run the right `EXPLAIN` and translate the result into 
 
 ```ts
 interface PlanNode {
-  type: string;              // e.g. "Seq Scan", "Nested Loop"
+  type: string;              // vendor label, e.g. "Seq Scan", "Nested Loop"
+  operation?: Operation;     // normalized category for disallowOperations
   cost?: number;             // optimizer's estimated cost
   estimatedRows?: number;    // optimizer's estimated row count
   actualRows?: number;       // rows the node actually produced
@@ -305,7 +358,7 @@ interface PlanNode {
 }
 ```
 
-The core walks that normalized tree — it never sees a vendor-specific plan key — so support for a new database is a new driver, not a change to the engine. The raw, untranslated plan is preserved in `analysis.plan` because that's the format you already know how to read.
+The core walks that normalized tree — it never sees a vendor-specific plan key — so support for a new database is a new driver, not a change to the engine. `type` keeps the database's own label for rendering; `operation` is the driver's mapping of that node onto the normalized [`Operation`](#disallowoperations) category the `disallowOperations` check tests against (left unset where the driver can't classify it). The raw, untranslated plan is preserved in `analysis.plan` because that's the format you already know how to read.
 
 ### Supported databases
 
@@ -314,6 +367,7 @@ The core walks that normalized tree — it never sees a vendor-specific plan key
 | Import                 | drizzle-explain/postgres   | drizzle-explain/mariadb   |
 | rowEstimateTolerance   | ✓                          | ✓                         |
 | maxCost                | ✓                          | ✓                         |
+| disallowOperations     | ✓                          | ✓                         |
 
 Both databases expose the signals `drizzle-explain` needs. PostgreSQL's `EXPLAIN (ANALYZE, FORMAT JSON)` and MariaDB's `ANALYZE FORMAT=JSON` each report estimated rows, actual rows, and a plan cost — MariaDB carries a per-node `cost` on the query block and its access nodes (verified against MariaDB 11.8), so `maxCost` is enforced on both. A trivial `const` primary-key lookup is the one case where MariaDB omits a cost; there the analyser simply skips `maxCost` rather than failing.
 

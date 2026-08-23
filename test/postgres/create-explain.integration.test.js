@@ -2,9 +2,9 @@ const { equal, deepEqual: deq, match, ok } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
 const { eq } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
-const { createExplain } = require('../../lib');
+const { createExplain, Operation } = require('../../lib');
 const { postgresDriver } = require('../../postgres');
-const { connectToTestDatabase } = require('./connect-to-test-database');
+const { connect } = require('./connect');
 
 const widgets = pgTable('widgets', {
   id: integer('id'),
@@ -15,7 +15,7 @@ describe('createExplain over the PostgreSQL driver', () => {
   let pool;
 
   before(async () => {
-    pool = connectToTestDatabase();
+    pool = connect();
     await pool.query('DROP TABLE IF EXISTS widgets');
     await pool.query('CREATE TABLE IF NOT EXISTS widgets (id integer, name text)');
     await pool.query("INSERT INTO widgets (id, name) VALUES (1, 'alpha'), (2, 'beta'), (3, 'gamma')");
@@ -43,6 +43,23 @@ describe('createExplain over the PostgreSQL driver', () => {
 
     equal(analysis.passed, false);
     match(analysis.message, /exceeds limit 0/);
+  });
+
+  test('fails when the plan runs a disallowed operation', async () => {
+    const explain = createExplain(postgresDriver(pool), { disallowOperations: [Operation.SEQ_SCAN] });
+
+    const analysis = await explain((db) => db.select().from(widgets));
+
+    equal(analysis.passed, false);
+    match(analysis.message, /disallowed operation: Seq Scan/);
+  });
+
+  test('a per-call allowOperations override permits an otherwise-disallowed operation', async () => {
+    const explain = createExplain(postgresDriver(pool), { disallowOperations: [Operation.SEQ_SCAN] });
+
+    const analysis = await explain((db) => db.select().from(widgets), { allowOperations: [Operation.SEQ_SCAN] });
+
+    equal(analysis.passed, true, analysis.message);
   });
 
   test('rolls back a write executed through the query callback', async () => {

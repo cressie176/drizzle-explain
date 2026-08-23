@@ -3,7 +3,8 @@ const { before, after, describe, test } = require('node:test');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
 const { eq } = require('drizzle-orm');
 const { mariadbDriver } = require('../../mariadb');
-const { connectMariadb } = require('./connect-mariadb');
+const { Operation } = require('../../lib/operation');
+const { connect } = require('./connect');
 
 const widgets = mysqlTable('widgets', {
   id: int('id').primaryKey(),
@@ -14,7 +15,7 @@ const widgets = mysqlTable('widgets', {
 let client;
 
 before(async () => {
-  client = await connectMariadb();
+  client = await connect();
   await client.query('DROP TABLE IF EXISTS widgets');
   await client.query('CREATE TABLE widgets (id INT PRIMARY KEY, name VARCHAR(64), quantity INT)');
   await client.query("INSERT INTO widgets VALUES (1, 'a', 10), (2, 'b', 20), (3, 'c', 30)");
@@ -60,6 +61,14 @@ describe('mariadbDriver', () => {
 
     equal(typeof statement.root.cost, 'number');
     ok(statement.root.cost > 0);
+  });
+
+  test('classifies a full-table scan as the normalized SEQ_SCAN operation', async () => {
+    const driver = mariadbDriver(client);
+    const [statement] = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.quantity, 20)));
+
+    const scanNodes = flatten(statement.root).filter((node) => node.operation === Operation.SEQ_SCAN);
+    ok(scanNodes.length > 0);
   });
 
   test('preserves the unmodified MariaDB plan', async () => {
