@@ -1,4 +1,4 @@
-const { equal, deepEqual: deq, match, ok } = require('node:assert/strict');
+const { equal, deepEqual: deq, match, ok, rejects } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
 const { eq } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
@@ -10,6 +10,16 @@ const widgets = pgTable('widgets', {
   id: integer('id'),
   name: text('name'),
 });
+
+async function findWidgetIdByName(db, name) {
+  const [found] = await db.select({ id: widgets.id }).from(widgets).where(eq(widgets.name, name));
+  return found.id;
+}
+
+async function findWidgetNamedLike(db, name) {
+  const id = await findWidgetIdByName(db, name);
+  return db.select().from(widgets).where(eq(widgets.id, id));
+}
 
 describe('createExplain over the PostgreSQL driver', () => {
   let pool;
@@ -60,6 +70,43 @@ describe('createExplain over the PostgreSQL driver', () => {
     const analysis = await explain((db) => db.select().from(widgets), { allowOperations: [Operation.SEQ_SCAN] });
 
     equal(analysis.passed, true, analysis.message);
+  });
+
+  test('analyses every statement a public query function issues', async () => {
+    const explain = createExplain(postgresDriver(pool), { maxCost: 1000000 });
+
+    const analysis = await explain((db) => findWidgetNamedLike(db, 'beta'), [{}, {}]);
+
+    equal(analysis.passed, true, analysis.message);
+    equal(analysis.statements.length, 2);
+  });
+
+  test('a dependent statement is explained with the parameters its predecessor produced', async () => {
+    const explain = createExplain(postgresDriver(pool));
+
+    const analysis = await explain((db) => findWidgetNamedLike(db, 'gamma'), [{ maxCost: 1000000 }, { maxCost: 0 }]);
+
+    match(analysis.message, /params: \[3\]/);
+  });
+
+  test('names the offending statement when one of several breaches its limits', async () => {
+    const explain = createExplain(postgresDriver(pool));
+
+    const analysis = await explain((db) => findWidgetNamedLike(db, 'beta'), [{ maxCost: 1000000 }, { maxCost: 0 }]);
+
+    equal(analysis.passed, false);
+    match(analysis.message, /statement 2 of 2/);
+    match(analysis.message, /exceeds limit 0/);
+    equal(analysis.statements[0].passed, true);
+  });
+
+  test('throws when the callback issues more statements than limits supplied', async () => {
+    const explain = createExplain(postgresDriver(pool));
+
+    await rejects(
+      explain((db) => findWidgetNamedLike(db, 'beta'), [{}]),
+      /expected 1 statements \(limits array length\) but 2 were executed/,
+    );
   });
 
   test('rolls back a write executed through the query callback', async () => {

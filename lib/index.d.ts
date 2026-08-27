@@ -34,6 +34,12 @@ export interface Analysis {
   plan: object;
 }
 
+export interface MultiStatementAnalysis {
+  passed: boolean;
+  message: string;
+  statements: Analysis[];
+}
+
 export interface ExplainedStatement {
   sql: string;
   params: unknown[];
@@ -47,9 +53,9 @@ export interface Driver<TDatabase = unknown> {
 
 export type QueryFunction<TDatabase, TQuery> = (db: TDatabase) => TQuery;
 
-export type ExplainFunction<TDatabase> = (
-  run: QueryFunction<TDatabase, unknown>,
-  overrides?: Limits,
-) => Promise<Analysis>;
+export interface ExplainFunction<TDatabase> {
+  (run: QueryFunction<TDatabase, unknown>, overrides: Limits[]): Promise<MultiStatementAnalysis>;
+  (run: QueryFunction<TDatabase, unknown>, overrides?: Limits): Promise<Analysis>;
+}
 
 export function createExplain<TDatabase>(driver: Driver<TDatabase>, defaults?: Limits): ExplainFunction<TDatabase>;

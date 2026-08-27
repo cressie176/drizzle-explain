@@ -100,7 +100,7 @@ Runs the query returned by `fn` through `EXPLAIN ANALYZE` and returns an analysi
 - **fn** — `(db) => query`. Receives an instrumented Drizzle database and returns a single Drizzle query.
 - **overrides** — `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, merged over the defaults for this call only. To permit an operation your default bans for one specific query, pass `{ allowOperations: [Operation.SEQ_SCAN] }` — it lifts *only* that operation's ban for that call and leaves the rest of the default `disallowOperations` list intact (see [disallowOperations](#disallowoperations)).
 
-Exactly one statement must be executed per call. If `fn` runs zero or more than one statement, `explain` throws — performance-testing a single query is the unit of measurement.
+Exactly one statement must be executed per call. If `fn` runs zero or more than one statement, `explain` throws — a single query is the unit of measurement. To check a function that legitimately issues several, pass an array of limits (see [Multiple statements](#multiple-statements)).
 
 Returns:
 
@@ -136,6 +136,49 @@ Seq Scan on reservations  (cost=0..62431 rows=10 actual=10)  ✘ cost 62431 > 10
 The raw plan is always available in `analysis.plan` if you want to log or inspect the full detail; it is the database's native EXPLAIN output, unmodified.
 
 The `✘` markers are printed in red on an interactive terminal, and left uncoloured when output is piped or `CI` is set. Most test runners (including `node --test`) capture the subprocess stdout, which hides the terminal from the renderer and disables colour; set `FORCE_COLOR=1` to force it back on, or `NO_COLOR=1` to turn it off everywhere. The plain text is identical either way, so assertions never depend on colour.
+
+### Multiple statements
+
+Sometimes the thing you want to performance-test isn't a single query — a public function calls a private helper that queries, or fetches a row and then fetches its children. Pass an **array** of limits and `explain` checks every statement the callback issues, pairing them **by execution order**:
+
+```ts
+const analysis = await explain((db) => findRoomAvailability(db, 42), [
+  { maxCost: 100 },                                        // the lookup in the private helper
+  { maxCost: 500, allowOperations: [Operation.SEQ_SCAN] }, // the availability query itself
+]);
+
+assert.ok(analysis.passed, analysis.message);
+```
+
+Each entry merges over the defaults independently, exactly as a single override does, so `{}` means "defaults only, no exception for this statement".
+
+The array length is also a **contract on how many statements run**. If the callback issues more or fewer than there are entries, `explain` throws naming both numbers — so an accidental extra query (a helper that grew a second lookup, an N+1 introduced by a refactor) fails the test rather than slipping through unmeasured. An empty array is rejected: asserting that a function makes no queries isn't what `explain` is for.
+
+The return value is an aggregate rather than a single `Analysis`:
+
+```ts
+interface MultiStatementAnalysis {
+  passed: boolean;      // true only if every statement is within its limits
+  message: string;      // "" when all passed; otherwise the failing statements
+  statements: Analysis[]; // one Analysis per statement, each with its own limits and plan
+}
+```
+
+`passed` and `message` mean the same as they do for a single statement, so the assertion you write is identical. The message names each failing statement by position, SQL, and the parameters it actually ran with — including values derived from an earlier statement's results:
+
+```
+statement 2 of 2
+  sql: select "id", "name" from "rooms" where "hotel_id" = $1
+  params: [17]
+
+✘ cost 62431 exceeds limit 100
+
+Seq Scan on rooms  (cost=0..62431 rows=10 actual=10)  ✘ cost 62431 > 100
+```
+
+Statements that passed are left out of the message entirely.
+
+Because pairing is by execution order, the callback must issue its queries **sequentially**. A `Promise.all` inside `fn` leaves the order — and therefore which limits apply to which statement — undefined.
 
 ## What it checks
 

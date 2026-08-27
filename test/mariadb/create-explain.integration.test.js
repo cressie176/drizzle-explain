@@ -1,4 +1,4 @@
-const { equal, match } = require('node:assert/strict');
+const { equal, match, rejects } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
 const { eq } = require('drizzle-orm');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
@@ -11,6 +11,16 @@ const widgets = mysqlTable('widgets', {
   name: varchar('name', { length: 64 }),
   quantity: int('quantity'),
 });
+
+async function findQuantityByName(db, name) {
+  const [found] = await db.select({ quantity: widgets.quantity }).from(widgets).where(eq(widgets.name, name));
+  return found.quantity;
+}
+
+async function findWidgetsStockedLike(db, name) {
+  const quantity = await findQuantityByName(db, name);
+  return db.select().from(widgets).where(eq(widgets.quantity, quantity));
+}
 
 describe('createExplain over the MariaDB driver', () => {
   let client;
@@ -62,6 +72,32 @@ describe('createExplain over the MariaDB driver', () => {
     });
 
     equal(analysis.passed, true, analysis.message);
+  });
+
+  test('analyses every statement a public query function issues', async () => {
+    const explain = createExplain(mariadbDriver(client), { maxCost: 1000000 });
+
+    const analysis = await explain((db) => findWidgetsStockedLike(db, 'b'), [{}, {}]);
+
+    equal(analysis.passed, true, analysis.message);
+    equal(analysis.statements.length, 2);
+  });
+
+  test('a dependent statement is explained with the parameters its predecessor produced', async () => {
+    const explain = createExplain(mariadbDriver(client));
+
+    const analysis = await explain((db) => findWidgetsStockedLike(db, 'c'), [{ maxCost: 1000000 }, { maxCost: 0 }]);
+
+    match(analysis.message, /params: \[30\]/);
+  });
+
+  test('throws when the callback issues more statements than limits supplied', async () => {
+    const explain = createExplain(mariadbDriver(client));
+
+    await rejects(
+      explain((db) => findWidgetsStockedLike(db, 'b'), [{}]),
+      /expected 1 statements \(limits array length\) but 2 were executed/,
+    );
   });
 
   test('rolls back a write executed through the query callback', async () => {
