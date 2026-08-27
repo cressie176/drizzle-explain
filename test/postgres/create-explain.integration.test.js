@@ -109,6 +109,27 @@ describe('createExplain over the PostgreSQL driver', () => {
     );
   });
 
+  test('analyses a Promise.all of a write and an independent read with distinct limits', async () => {
+    const explain = createExplain(postgresDriver(pool), { maxCost: 1000000 });
+
+    const analysis = await explain(
+      (db) =>
+        Promise.all([
+          db.insert(widgets).values({ id: 60, name: 'concurrent' }),
+          db.select().from(widgets).where(eq(widgets.id, 1)),
+        ]),
+      [{}, { maxCost: 0 }],
+    );
+
+    equal(analysis.passed, false);
+    equal(analysis.statements[0].passed, true);
+    equal(analysis.statements[1].passed, false);
+    match(analysis.message, /statement 2 of 2/);
+
+    const { rows } = await pool.query('SELECT id FROM widgets WHERE id = 60');
+    deq(rows, []);
+  });
+
   test('rolls back a write executed through the query callback', async () => {
     const explain = createExplain(postgresDriver(pool));
 

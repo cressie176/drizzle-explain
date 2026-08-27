@@ -100,6 +100,27 @@ describe('createExplain over the MariaDB driver', () => {
     );
   });
 
+  test('analyses a Promise.all of a write and an independent read with distinct limits', async () => {
+    const explain = createExplain(mariadbDriver(client), { maxCost: 1000000 });
+
+    const analysis = await explain(
+      (db) =>
+        Promise.all([
+          db.insert(widgets).values({ id: 60, name: 'concurrent', quantity: 6 }),
+          db.select().from(widgets).where(eq(widgets.quantity, 20)),
+        ]),
+      [{}, { maxCost: 0 }],
+    );
+
+    equal(analysis.passed, false);
+    equal(analysis.statements[0].passed, true);
+    equal(analysis.statements[1].passed, false);
+    match(analysis.message, /statement 2 of 2/);
+
+    const [rows] = await client.query('SELECT COUNT(*) AS total FROM widgets WHERE id = 60');
+    equal(Number(rows[0].total), 0);
+  });
+
   test('rolls back a write executed through the query callback', async () => {
     const explain = createExplain(mariadbDriver(client));
 

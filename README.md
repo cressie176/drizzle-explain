@@ -178,7 +178,7 @@ Seq Scan on rooms  (cost=0..62431 rows=10 actual=10)  ✘ cost 62431 > 100
 
 Statements that passed are left out of the message entirely.
 
-Because pairing is by execution order, the callback must issue its queries **sequentially**. A `Promise.all` inside `fn` leaves the order, and therefore which limits apply to which statement, undefined.
+Concurrent issuance is safe: the driver serializes statements, so a callback that fires independent queries with `Promise.all` can be tested unmodified. Statements pair with limits in the order they begin executing, which for `Promise.all([...])` is the array order in practice; sequential awaits remain the clearest style because they make that order obvious. If a pairing ever surprises you, the failure message prints each statement's SQL and parameters, so the mismatch is visible rather than silent. A statement started but not awaited, such as the loser of a `Promise.race`, still executes, is still measured, and still needs a limits entry: production ran it too, and the race only ignored its result.
 
 ## What it checks
 
@@ -416,7 +416,7 @@ ROLLBACK TO SAVEPOINT             -- effects undone
 <statement>                       -- real execution, real rows returned
 ```
 
-The plan is therefore measured against exactly the state the real execution sees, and the callback receives exactly the rows production would. Two consequences are worth knowing:
+Statements are serialized within a run: if the callback issues queries concurrently, each one's sandwich completes before the next begins, so the savepoints can never interleave and only one query is ever in flight on the connection. The plan is therefore measured against exactly the state the real execution sees, and the callback receives exactly the rows production would. Two consequences are worth knowing:
 
 - Each statement executes twice, so a run takes roughly twice as long as the query itself.
 - Anything not covered by transactional rollback happens twice, most commonly sequence advancement, so an auto-generated id may jump by two per inserted row. Nothing is committed either way.

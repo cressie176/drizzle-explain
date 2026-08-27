@@ -1,4 +1,4 @@
-const { deepEqual: deq, equal, ok } = require('node:assert/strict');
+const { deepEqual: deq, equal, ok, rejects } = require('node:assert/strict');
 const { before, after, describe, test } = require('node:test');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
 const { eq } = require('drizzle-orm');
@@ -10,6 +10,10 @@ const widgets = mysqlTable('widgets', {
   id: int('id').primaryKey(),
   name: varchar('name', { length: 64 }),
   quantity: int('quantity'),
+});
+
+const missing = mysqlTable('missing_table', {
+  id: int('id'),
 });
 
 let client;
@@ -125,6 +129,86 @@ describe('mariadbDriver', () => {
     });
 
     equal(result[0].affectedRows, 1);
+  });
+
+  describe('concurrent statements', () => {
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    test('serialises a Promise.all so each statement sees the effects exactly once', async () => {
+      const driver = mariadbDriver(client);
+      let observed;
+
+      const statements = await driver.explain(async (db) => {
+        await Promise.all([
+          db.insert(widgets).values({ id: 50, name: 'concurrent', quantity: 5 }),
+          db.select().from(widgets).where(eq(widgets.id, 50)),
+        ]);
+        observed = await db.select().from(widgets).where(eq(widgets.id, 50));
+      });
+
+      equal(statements.length, 3);
+      equal(observed.length, 1);
+      equal(observed[0].name, 'concurrent');
+    });
+
+    test('pairs Promise.all statements in array order', async () => {
+      const driver = mariadbDriver(client);
+
+      const statements = await driver.explain((db) =>
+        Promise.all([
+          db.select().from(widgets).where(eq(widgets.id, 1)),
+          db.select().from(widgets).where(eq(widgets.id, 2)),
+        ]),
+      );
+
+      deq(
+        statements.map((statement) => statement.params),
+        [[1], [2]],
+      );
+    });
+
+    test('applies staggered overlapping writes exactly once each', async () => {
+      const driver = mariadbDriver(client);
+      let observed;
+
+      await driver.explain(async (db) => {
+        const first = db.insert(widgets).values({ id: 51, name: 'early', quantity: 1 }).execute();
+        await sleep(1);
+        const second = db.insert(widgets).values({ id: 52, name: 'late', quantity: 2 }).execute();
+        await Promise.all([first, second]);
+        observed = await db.select().from(widgets).where(eq(widgets.name, 'early'));
+      });
+
+      equal(observed.length, 1);
+      equal(observed[0].id, 51);
+    });
+
+    test('a raced statement still completes and is counted', async () => {
+      const driver = mariadbDriver(client);
+
+      const statements = await driver.explain((db) =>
+        Promise.race([
+          db.select().from(widgets).where(eq(widgets.id, 1)),
+          db.select().from(widgets).where(eq(widgets.id, 2)),
+        ]),
+      );
+
+      equal(statements.length, 2);
+    });
+
+    test('a statement that fails after the callback resolved rejects the run', async () => {
+      const driver = mariadbDriver(client);
+
+      await rejects(
+        driver.explain((db) =>
+          Promise.race([
+            db.select().from(widgets).where(eq(widgets.id, 1)),
+            db.select().from(missing).where(eq(missing.id, 1)),
+          ]),
+        ),
+        /missing_table/,
+      );
+    });
   });
 
   test('returns one statement per executed query', async () => {

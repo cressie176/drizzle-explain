@@ -11,6 +11,10 @@ const widgets = pgTable('widgets', {
   name: text('name'),
 });
 
+const missing = pgTable('missing_table', {
+  id: integer('id'),
+});
+
 describe('postgresDriver', () => {
   let pool;
 
@@ -121,6 +125,94 @@ describe('postgresDriver', () => {
     });
 
     deq(observed, [{ id: 43, name: 'unreturned' }]);
+  });
+
+  describe('concurrent statements', () => {
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const warnings = [];
+    const collectWarning = (warning) => warnings.push(warning);
+
+    before(() => process.on('warning', collectWarning));
+    after(() => process.removeListener('warning', collectWarning));
+
+    test('serialises a Promise.all so each statement sees the effects exactly once', async () => {
+      const driver = postgresDriver(pool);
+      let observed;
+
+      const statements = await driver.explain(async (db) => {
+        await Promise.all([
+          db.insert(widgets).values({ id: 50, name: 'concurrent' }),
+          db.select().from(widgets).where(eq(widgets.id, 50)),
+        ]);
+        observed = await db.select().from(widgets).where(eq(widgets.id, 50));
+      });
+
+      equal(statements.length, 3);
+      deq(observed, [{ id: 50, name: 'concurrent' }]);
+    });
+
+    test('pairs Promise.all statements in array order', async () => {
+      const driver = postgresDriver(pool);
+
+      const statements = await driver.explain((db) =>
+        Promise.all([
+          db.select().from(widgets).where(eq(widgets.id, 1)),
+          db.select().from(widgets).where(eq(widgets.id, 2)),
+        ]),
+      );
+
+      deq(
+        statements.map((statement) => statement.params),
+        [[1], [2]],
+      );
+    });
+
+    test('applies staggered overlapping writes exactly once each', async () => {
+      const driver = postgresDriver(pool);
+      let observed;
+
+      await driver.explain(async (db) => {
+        const first = db.insert(widgets).values({ id: 51, name: 'early' }).execute();
+        await sleep(1);
+        const second = db.insert(widgets).values({ id: 52, name: 'late' }).execute();
+        await Promise.all([first, second]);
+        observed = await db.select().from(widgets).where(eq(widgets.name, 'early'));
+      });
+
+      deq(observed, [{ id: 51, name: 'early' }]);
+    });
+
+    test('a raced statement still completes and is counted', async () => {
+      const driver = postgresDriver(pool);
+
+      const statements = await driver.explain((db) =>
+        Promise.race([
+          db.select().from(widgets).where(eq(widgets.id, 1)),
+          db.select().from(widgets).where(eq(widgets.id, 2)),
+        ]),
+      );
+
+      equal(statements.length, 2);
+    });
+
+    test('a statement that fails after the callback resolved rejects the run', async () => {
+      const driver = postgresDriver(pool);
+
+      await rejects(
+        driver.explain((db) =>
+          Promise.race([
+            db.select().from(widgets).where(eq(widgets.id, 1)),
+            db.select().from(missing).where(eq(missing.id, 1)),
+          ]),
+        ),
+        /missing_table/,
+      );
+    });
+
+    test('never overlaps queries on the connection', () => {
+      const overlaps = warnings.filter((warning) => /already executing/.test(warning.message));
+      deq(overlaps, []);
+    });
   });
 
   test('leaves the database unchanged after a write', async () => {
