@@ -1,4 +1,4 @@
-const { equal, ok } = require('node:assert/strict');
+const { deepEqual: deq, equal, ok } = require('node:assert/strict');
 const { before, after, describe, test } = require('node:test');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
 const { eq } = require('drizzle-orm');
@@ -77,6 +77,54 @@ describe('mariadbDriver', () => {
 
     ok(statement.plan.query_block);
     equal(statement.plan.query_block.select_id, 1);
+  });
+
+  test('returns the real rows to the query function', async () => {
+    const driver = mariadbDriver(client);
+    let observed;
+
+    await driver.explain(async (db) => {
+      observed = await db.select().from(widgets).where(eq(widgets.id, 2));
+    });
+
+    equal(observed.length, 1);
+    equal(observed[0].name, 'b');
+    equal(observed[0].quantity, 20);
+  });
+
+  test('records the sql and params of each statement', async () => {
+    const driver = mariadbDriver(client);
+
+    const [statement] = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.id, 2)));
+
+    ok(statement.sql.includes('`widgets`'));
+    deq(statement.params, [2]);
+  });
+
+  test('applies a write exactly once so a dependent read sees it', async () => {
+    const driver = mariadbDriver(client);
+    let observed;
+
+    const statements = await driver.explain(async (db) => {
+      await db.insert(widgets).values({ id: 42, name: 'transient', quantity: 7 });
+      observed = await db.select().from(widgets).where(eq(widgets.id, 42));
+    });
+
+    equal(observed.length, 1);
+    equal(observed[0].quantity, 7);
+    equal(statements.length, 2);
+    deq(statements[1].params, [42]);
+  });
+
+  test('reports affected rows to the query function after a write', async () => {
+    const driver = mariadbDriver(client);
+    let result;
+
+    await driver.explain(async (db) => {
+      result = await db.insert(widgets).values({ id: 43, name: 'counted', quantity: 1 });
+    });
+
+    equal(result[0].affectedRows, 1);
   });
 
   test('returns one statement per executed query', async () => {

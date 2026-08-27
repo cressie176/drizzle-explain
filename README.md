@@ -42,6 +42,8 @@ When the plan is within tolerance, `passed` is `true`. When it isn't, `message` 
 
 The query runs against your real schema and (ideally) production-shaped data, but never commits — the transaction is rolled back whether the query reads or writes. Nothing to clean up.
 
+Your callback sees the query's real results, so code that reads the rows it fetched behaves exactly as it does in production (see [Transparent execution](#transparent-execution)).
+
 ## Installation
 
 ```sh
@@ -80,7 +82,7 @@ test('findReservationsByRoom stays cheap', async () => {
 });
 ```
 
-`explain` injects a database instance into your callback, runs the query it returns through `EXPLAIN ANALYZE`, and hands you back the analysis. Your query function is unchanged — in production it takes the real Drizzle instance; under test it takes the one `drizzle-explain` supplies.
+`explain` injects a database instance into your callback, runs the query it returns through `EXPLAIN ANALYZE`, and hands you back the analysis. Your query function is unchanged — in production it takes the real Drizzle instance; under test it takes the one `drizzle-explain` supplies, which returns the same rows the real one would.
 
 ## API
 
@@ -344,7 +346,7 @@ await seed(db, schema, { seed: 1 }).refine((f) => ({
 
 The mechanism is general: wrap the query in a transaction, ask the database to `EXPLAIN ANALYZE` it, translate the database's plan into a common shape, check the limits, roll back. Only two pieces are database-specific — the exact `EXPLAIN` syntax, and the structure of the plan the database returns — and both live entirely inside a driver.
 
-A driver's only job is to run the right `EXPLAIN` and translate the result into a normalized plan node:
+A driver's only job is to run the right `EXPLAIN`, execute the statement, and translate the result into a normalized plan node:
 
 ```ts
 interface PlanNode {
@@ -359,6 +361,22 @@ interface PlanNode {
 ```
 
 The core walks that normalized tree — it never sees a vendor-specific plan key — so support for a new database is a new driver, not a change to the engine. `type` keeps the database's own label for rendering; `operation` is the driver's mapping of that node onto the normalized [`Operation`](#disallowoperations) category the `disallowOperations` check tests against (left unset where the driver can't classify it). The raw, untranslated plan is preserved in `analysis.plan` because that's the format you already know how to read.
+
+### Transparent execution
+
+Because your callback may consume the rows its query returned — processing the results, deriving a second query's parameters from them, or branching on how many came back — `drizzle-explain` executes each statement for real, not just under `EXPLAIN`. There is no single-execution shortcut: neither PostgreSQL's `EXPLAIN (ANALYZE, FORMAT JSON)` nor MariaDB's `ANALYZE FORMAT=JSON` returns the query's rows, only its plan. So every statement runs twice inside the rolled-back transaction, bracketed by a savepoint so its effects land exactly once:
+
+```
+SAVEPOINT drizzle_explain
+EXPLAIN ANALYZE <statement>       -- effects happen, plan captured
+ROLLBACK TO SAVEPOINT             -- effects undone
+<statement>                       -- real execution, real rows returned
+```
+
+The plan is therefore measured against exactly the state the real execution sees, and the callback receives exactly the rows production would. Two consequences are worth knowing:
+
+- Each statement executes twice, so a run takes roughly twice as long as the query itself.
+- Anything not covered by transactional rollback happens twice — most commonly sequence advancement, so an auto-generated id may jump by two per inserted row. Nothing is committed either way.
 
 ### Supported databases
 

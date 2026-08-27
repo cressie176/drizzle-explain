@@ -75,6 +75,54 @@ describe('postgresDriver', () => {
     equal(statement.root.operation, Operation.SEQ_SCAN);
   });
 
+  test('returns the real rows to the query function', async () => {
+    const driver = postgresDriver(pool);
+    let observed;
+
+    await driver.explain(async (db) => {
+      observed = await db.select().from(widgets).where(eq(widgets.id, 2));
+    });
+
+    deq(observed, [{ id: 2, name: 'beta' }]);
+  });
+
+  test('records the sql and params of each statement', async () => {
+    const driver = postgresDriver(pool);
+
+    const [statement] = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.id, 2)));
+
+    ok(statement.sql.includes('from "widgets"'));
+    deq(statement.params, [2]);
+  });
+
+  test('applies a write exactly once so a dependent read sees it', async () => {
+    const driver = postgresDriver(pool);
+    let inserted;
+    let observed;
+
+    const statements = await driver.explain(async (db) => {
+      inserted = await db.insert(widgets).values({ id: 42, name: 'transient' }).returning();
+      observed = await db.select().from(widgets).where(eq(widgets.id, inserted[0].id));
+    });
+
+    deq(inserted, [{ id: 42, name: 'transient' }]);
+    deq(observed, [{ id: 42, name: 'transient' }]);
+    equal(statements.length, 2);
+    deq(statements[1].params, [42]);
+  });
+
+  test('returns the result of a write issued without returning', async () => {
+    const driver = postgresDriver(pool);
+    let observed;
+
+    await driver.explain(async (db) => {
+      await db.insert(widgets).values({ id: 43, name: 'unreturned' });
+      observed = await db.select().from(widgets).where(eq(widgets.id, 43));
+    });
+
+    deq(observed, [{ id: 43, name: 'unreturned' }]);
+  });
+
   test('leaves the database unchanged after a write', async () => {
     const driver = postgresDriver(pool);
 

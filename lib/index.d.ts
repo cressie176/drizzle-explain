@@ -35,6 +35,8 @@ export interface Analysis {
 }
 
 export interface ExplainedStatement {
+  sql: string;
+  params: unknown[];
   plan: object;
   root: PlanNode;
 }
