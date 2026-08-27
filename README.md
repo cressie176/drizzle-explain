@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/npm/l/drizzle-explain)](LICENSE)
 [![Coverage](https://codecov.io/gh/cressie176/drizzle-explain/branch/main/graph/badge.svg)](https://codecov.io/gh/cressie176/drizzle-explain)
 
-Performance-test your [Drizzle ORM](https://orm.drizzle.team/) queries by running them through `EXPLAIN ANALYZE` and asserting the plan is within tolerance — before a bad plan reaches production.
+Performance-test your [Drizzle ORM](https://orm.drizzle.team/) queries by running them through `EXPLAIN ANALYZE` and asserting the plan is within tolerance, before a bad plan reaches production.
 
 ## The Problem
 
@@ -17,15 +17,15 @@ A query can be correct, pass every functional test, and still be a latent outage
 db.select().from(reservations).where(eq(reservations.roomId, roomId));
 ```
 
-If nobody added an index on `room_id`, PostgreSQL scans all 5 million rows to return 10. It works on your laptop against a handful of seeded rows. It works in the demo. Then a marketing email lands, the query runs a thousand times a second against production volumes, and the database falls over. The plan was wrong the whole time — you just couldn't see it, because your test data was too small and nothing was watching the plan.
+If nobody added an index on `room_id`, PostgreSQL scans all 5 million rows to return 10. It works on your laptop against a handful of seeded rows. It works in the demo. Then a marketing email lands, the query runs a thousand times a second against production volumes, and the database falls over. The plan was wrong the whole time; you just couldn't see it, because your test data was too small and nothing was watching the plan.
 
 ## The Solution
 
 `drizzle-explain` runs each query under `EXPLAIN (ANALYZE, FORMAT JSON)` inside a transaction that is always rolled back, then checks the plan against a set of hardware-independent signals:
 
-- **cost** — the optimizer's own estimate of how expensive the plan is. A missing index shows up as a cost blowout.
-- **row-estimate tolerance** — how far the optimizer's row estimates are from reality. Bad estimates are what cause bad plans; catching them catches the *cause*, not just the symptom.
-- **disallowed operations** — the plan can be failed outright if it contains an operation you never want to see, such as a sequential scan. Off by default.
+- **cost**: the optimizer's own estimate of how expensive the plan is. A missing index shows up as a cost blowout.
+- **row-estimate tolerance**: how far the optimizer's row estimates are from reality. Bad estimates are what cause bad plans; catching them catches the *cause*, not just the symptom.
+- **disallowed operations**: the plan can be failed outright if it contains an operation you never want to see, such as a sequential scan. Off by default.
 
 ```ts
 import { createExplain } from 'drizzle-explain';
@@ -40,7 +40,7 @@ assert.ok(analysis.passed, analysis.message);
 
 When the plan is within tolerance, `passed` is `true`. When it isn't, `message` is a human-readable plan tree with the offending nodes annotated, so the assertion failure tells you exactly where the query went wrong.
 
-The query runs against your real schema and (ideally) production-shaped data, but never commits — the transaction is rolled back whether the query reads or writes. Nothing to clean up.
+The query runs against your real schema and (ideally) production-shaped data, but never commits: the transaction is rolled back whether the query reads or writes. Nothing to clean up.
 
 Your callback sees the query's real results, so code that reads the rows it fetched behaves exactly as it does in production (see [Transparent execution](#transparent-execution)).
 
@@ -50,11 +50,11 @@ Your callback sees the query's real results, so code that reads the rows it fetc
 npm install --save-dev drizzle-explain
 ```
 
-`drizzle-orm` is a peer dependency — `drizzle-explain` uses the Drizzle instance you already have. It has no other production dependencies and does not bundle a database client; you bring your own (`pg`, `mysql2`, …) and hand it to the driver.
+`drizzle-orm` is a peer dependency; `drizzle-explain` uses the Drizzle instance you already have. It has no other production dependencies and does not bundle a database client; you bring your own (`pg`, `mysql2`, …) and hand it to the driver.
 
 ## Quick Start
 
-Write your queries as functions that take a Drizzle database and return a Drizzle query. This is good practice regardless — it keeps persistence logic testable and free of connection concerns.
+Write your queries as functions that take a Drizzle database and return a Drizzle query. This is good practice regardless; it keeps persistence logic testable and free of connection concerns.
 
 ```ts
 // reservations.ts
@@ -82,7 +82,7 @@ test('findReservationsByRoom stays cheap', async () => {
 });
 ```
 
-`explain` injects a database instance into your callback, runs the query it returns through `EXPLAIN ANALYZE`, and hands you back the analysis. Your query function is unchanged — in production it takes the real Drizzle instance; under test it takes the one `drizzle-explain` supplies, which returns the same rows the real one would.
+`explain` injects a database instance into your callback, runs the query it returns through `EXPLAIN ANALYZE`, and hands you back the analysis. Your query function is unchanged: in production it takes the real Drizzle instance; under test it takes the one `drizzle-explain` supplies, which returns the same rows the real one would.
 
 ## API
 
@@ -90,17 +90,17 @@ test('findReservationsByRoom stays cheap', async () => {
 
 Creates an `explain` function bound to a driver and a set of default limits.
 
-- **driver** — a database-specific driver (see [Drivers](#drivers)), e.g. `postgresDriver(pool)`.
-- **defaults** — `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, applied to every query unless overridden per call. `drizzle-explain` ships no built-in defaults; you decide what "acceptable" means for your application (see [Choosing limits](#choosing-limits)).
+- **driver**: a database-specific driver (see [Drivers](#drivers)), e.g. `postgresDriver(pool)`.
+- **defaults**: `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, applied to every query unless overridden per call. `drizzle-explain` ships no built-in defaults; you decide what "acceptable" means for your application (see [Choosing limits](#choosing-limits)).
 
 ### explain(fn, overrides?)
 
 Runs the query returned by `fn` through `EXPLAIN ANALYZE` and returns an analysis.
 
-- **fn** — `(db) => query`. Receives an instrumented Drizzle database and returns a single Drizzle query, or — when checking several statements — awaits them in order (see [Multiple statements](#multiple-statements)).
-- **overrides** — `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, merged over the defaults for this call only; or an array of those, one per statement, to check a callback that issues several (see [Multiple statements](#multiple-statements)). To permit an operation your default bans for one specific query, pass `{ allowOperations: [Operation.SEQ_SCAN] }` — it lifts *only* that operation's ban for that call and leaves the rest of the default `disallowOperations` list intact (see [disallowOperations](#disallowoperations)).
+- **fn**: `(db) => query`. Receives an instrumented Drizzle database and returns a single Drizzle query, or, when checking several statements, awaits them in order (see [Multiple statements](#multiple-statements)).
+- **overrides**: `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, merged over the defaults for this call only; or an array of those, one per statement, to check a callback that issues several (see [Multiple statements](#multiple-statements)). To permit an operation your default bans for one specific query, pass `{ allowOperations: [Operation.SEQ_SCAN] }`; it lifts *only* that operation's ban for that call and leaves the rest of the default `disallowOperations` list intact (see [disallowOperations](#disallowoperations)).
 
-Exactly one statement must be executed per call. If `fn` runs zero or more than one statement, `explain` throws — a single query is the unit of measurement. To check a function that legitimately issues several, pass an array of limits (see [Multiple statements](#multiple-statements)).
+Exactly one statement must be executed per call. If `fn` runs zero or more than one statement, `explain` throws: a single query is the unit of measurement. To check a function that legitimately issues several, pass an array of limits (see [Multiple statements](#multiple-statements)).
 
 Returns:
 
@@ -118,7 +118,7 @@ interface Analysis {
 }
 ```
 
-`explain` never throws on a failing plan and never asserts — it reports. You assert, with the test framework and style you prefer:
+`explain` never throws on a failing plan and never asserts; it reports. You assert, with the test framework and style you prefer:
 
 ```ts
 assert.ok(analysis.passed, analysis.message);
@@ -139,7 +139,7 @@ The `✘` markers are printed in red on an interactive terminal, and left uncolo
 
 ### Multiple statements
 
-Sometimes the thing you want to performance-test isn't a single query — a public function calls a private helper that queries, or fetches a row and then fetches its children. Pass an **array** of limits and `explain` checks every statement the callback issues, pairing them **by execution order**:
+Sometimes the thing you want to performance-test isn't a single query: a public function calls a private helper that queries, or fetches a row and then fetches its children. Pass an **array** of limits and `explain` checks every statement the callback issues, pairing them **by execution order**:
 
 ```ts
 const analysis = await explain((db) => findRoomAvailability(db, 42), [
@@ -152,7 +152,7 @@ assert.ok(analysis.passed, analysis.message);
 
 Each entry merges over the defaults independently, exactly as a single override does, so `{}` means "defaults only, no exception for this statement".
 
-The array length is also a **contract on how many statements run**. If the callback issues more or fewer than there are entries, `explain` throws naming both numbers — so an accidental extra query (a helper that grew a second lookup, an N+1 introduced by a refactor) fails the test rather than slipping through unmeasured. An empty array is rejected: asserting that a function makes no queries isn't what `explain` is for.
+The array length is also a **contract on how many statements run**. If the callback issues more or fewer than there are entries, `explain` throws naming both numbers, so an accidental extra query (a helper that grew a second lookup, an N+1 introduced by a refactor) fails the test rather than slipping through unmeasured. An empty array is rejected: asserting that a function makes no queries isn't what `explain` is for.
 
 The return value is an aggregate rather than a single `Analysis`:
 
@@ -164,7 +164,7 @@ interface MultiStatementAnalysis {
 }
 ```
 
-`passed` and `message` mean the same as they do for a single statement, so the assertion you write is identical. The message names each failing statement by position, SQL, and the parameters it actually ran with — including values derived from an earlier statement's results:
+`passed` and `message` mean the same as they do for a single statement, so the assertion you write is identical. The message names each failing statement by position, SQL, and the parameters it actually ran with, including values derived from an earlier statement's results:
 
 ```
 statement 2 of 2
@@ -178,15 +178,15 @@ Seq Scan on rooms  (cost=0..62431 rows=10 actual=10)  ✘ cost 62431 > 100
 
 Statements that passed are left out of the message entirely.
 
-Because pairing is by execution order, the callback must issue its queries **sequentially**. A `Promise.all` inside `fn` leaves the order — and therefore which limits apply to which statement — undefined.
+Because pairing is by execution order, the callback must issue its queries **sequentially**. A `Promise.all` inside `fn` leaves the order, and therefore which limits apply to which statement, undefined.
 
 ## What it checks
 
-`drizzle-explain` is database-independent, but not every database exposes the signal each check needs. A check is only applied when its driver can supply the underlying number; where a driver can't, that check is silently skipped rather than failed. The [drivers table](#supported-databases) shows which checks each database supports — read it alongside this section.
+`drizzle-explain` is database-independent, but not every database exposes the signal each check needs. A check is only applied when its driver can supply the underlying number; where a driver can't, that check is silently skipped rather than failed. The [drivers table](#supported-databases) shows which checks each database supports; read it alongside this section.
 
 ### maxCost
 
-The optimizer's estimated total cost for the top of the plan. Cost is in the optimizer's own arbitrary units, so the *absolute* number is only meaningful relative to your schema — but that's exactly what makes it a good tripwire. A query that should use an index and doesn't will cost orders of magnitude more than one that does.
+The optimizer's estimated total cost for the top of the plan. Cost is in the optimizer's own arbitrary units, so the *absolute* number is only meaningful relative to your schema, but that's exactly what makes it a good tripwire. A query that should use an index and doesn't will cost orders of magnitude more than one that does.
 
 This check requires the database to report a plan cost. PostgreSQL does; not every database does (see the [drivers table](#supported-databases)). Where the driver can't supply a cost, `maxCost` has no effect even if you set it.
 
@@ -194,11 +194,11 @@ This check requires the database to report a plan cost. PostgreSQL does; not eve
 
 The largest factor by which the optimizer's estimated row count diverges from the actual row count, across **every node in the plan**, expressed as `max(estimated, actual) / min(estimated, actual)`. A tolerance of `10` permits estimates that are up to 10× out in either direction.
 
-This matters more than it first appears. The optimizer chooses a plan based on how many rows it *expects* each step to produce. If it expects a step to return 1 row and it actually returns 10,000, it will happily pick a nested loop that is catastrophic at that volume. The bad plan is downstream of the bad estimate — so a large row-estimate divergence is an early warning that a plan is fragile, usually because table statistics are stale or insufficient.
+This matters more than it first appears. The optimizer chooses a plan based on how many rows it *expects* each step to produce. If it expects a step to return 1 row and it actually returns 10,000, it will happily pick a nested loop that is catastrophic at that volume. The bad plan is downstream of the bad estimate, so a large row-estimate divergence is an early warning that a plan is fragile, usually because table statistics are stale or insufficient.
 
-`drizzle-explain` walks the **entire plan tree**, not just the root, because the misestimate that flips a plan is typically a deep node — a scan feeding a join — whose error is washed out by the time it reaches the top. The worst node is the one that matters, and it's the one named in the failure message.
+`drizzle-explain` walks the **entire plan tree**, not just the root, because the misestimate that flips a plan is typically a deep node (a scan feeding a join) whose error is washed out by the time it reaches the top. The worst node is the one that matters, and it's the one named in the failure message.
 
-Using a *ratio* rather than absolute counts means proportional data growth doesn't cause churn: as your data grows, estimate and actual scale together and the ratio holds steady. It only moves when the data changes *shape* — which is precisely when plans are at risk of flipping.
+Using a *ratio* rather than absolute counts means proportional data growth doesn't cause churn: as your data grows, estimate and actual scale together and the ratio holds steady. It only moves when the data changes *shape*, which is precisely when plans are at risk of flipping.
 
 When a node returns zero rows, the ratio is clamped (a divide-by-zero or "infinitely wrong" estimate isn't a useful signal), so an empty result never fails the check on its own.
 
@@ -212,7 +212,7 @@ import { createExplain, Operation } from 'drizzle-explain';
 const explain = createExplain(postgresDriver(pool), { disallowOperations: [Operation.SEQ_SCAN] });
 ```
 
-Where `maxCost` catches an expensive plan indirectly, this catches a specific *kind* of plan directly — a `Seq Scan` on a large table is one of the clearest signs of a missing or unused index, and this lets you assert on it by name rather than inferring it from cost.
+Where `maxCost` catches an expensive plan indirectly, this catches a specific *kind* of plan directly. A `Seq Scan` on a large table is one of the clearest signs of a missing or unused index, and this lets you assert on it by name rather than inferring it from cost.
 
 Operations are matched on a **normalized category**, not the database's own plan vocabulary, so the same limit works across drivers. The categories are exposed as the `Operation` enum:
 
@@ -228,11 +228,11 @@ Operations are matched on a **normalized category**, not the database's own plan
 | `AGGREGATE` | grouping / aggregation |
 | `OTHER` | a recognised node with no dedicated category |
 
-Like `maxCost`, this check **defaults to off** — with `disallowOperations` unset, no plan is ever rejected on operation type. A node the driver couldn't classify is never treated as disallowed.
+Like `maxCost`, this check **defaults to off**: with `disallowOperations` unset, no plan is ever rejected on operation type. A node the driver couldn't classify is never treated as disallowed.
 
 ### allowOperations
 
-`allowOperations` is the escape hatch for `disallowOperations`. It only ever *removes* an operation from the disallowed set — the effective ban is `disallowOperations` minus `allowOperations`. Because every operation is permitted by default, **setting `allowOperations` on its own (with no `disallowOperations`) does nothing**: there is no ban for it to lift. It is meaningful only as a **per-query override** against a `disallowOperations` default.
+`allowOperations` is the escape hatch for `disallowOperations`. It only ever *removes* an operation from the disallowed set: the effective ban is `disallowOperations` minus `allowOperations`. Because every operation is permitted by default, **setting `allowOperations` on its own (with no `disallowOperations`) does nothing**: there is no ban for it to lift. It is meaningful only as a **per-query override** against a `disallowOperations` default.
 
 This solves the awkward case where a global default bans several operations and one query legitimately needs one of them. Without `allowOperations` you'd have to re-declare the whole list minus the one you want; with it you name only the exception:
 
@@ -242,26 +242,26 @@ const explain = createExplain(postgresDriver(pool), {
   disallowOperations: [Operation.SEQ_SCAN, Operation.NESTED_LOOP],
 });
 
-// this one report genuinely scans a small lookup table — lift only the
+// this one report genuinely scans a small lookup table, so lift only the
 // SEQ_SCAN ban here; NESTED_LOOP stays disallowed for this query.
 const analysis = await explain((db) => summariseGrades(db), {
   allowOperations: [Operation.SEQ_SCAN],
 });
 ```
 
-Every such override is a place where someone looked at a plan and consciously accepted a specific operation for a specific query — the same discipline as a per-query `maxCost` override.
+Every such override is a place where someone looked at a plan and consciously accepted a specific operation for a specific query, the same discipline as a per-query `maxCost` override.
 
 ### What it does not check
 
-**Execution time is reported in the plan but never asserted.** Wall-clock time depends on hardware, cache state, and concurrent load — it would be flaky in CI and meaninglessly fast on a developer laptop. Cost and row-estimate tolerance are properties of the plan, not the machine, so they're trustworthy anywhere. If you want to eyeball timing, it's in `analysis.plan`; just don't gate on it.
+**Execution time is reported in the plan but never asserted.** Wall-clock time depends on hardware, cache state, and concurrent load; it would be flaky in CI and meaninglessly fast on a developer laptop. Cost and row-estimate tolerance are properties of the plan, not the machine, so they're trustworthy anywhere. If you want to eyeball timing, it's in `analysis.plan`; just don't gate on it.
 
 ## Choosing limits
 
-`drizzle-explain` deliberately ships no default limits — a sensible cost ceiling depends entirely on your schema. But the guidance is firm: **set your default `maxCost` low.**
+`drizzle-explain` deliberately ships no default limits, because a sensible cost ceiling depends entirely on your schema. But the guidance is firm: **set your default `maxCost` low.**
 
-A low default turns the check into a tripwire. Any query whose plan exceeds it stops and demands a human decision: either optimise the query, or explicitly raise the limit for that one query with a comment explaining why. You should *expect* a fair number of per-query overrides — that isn't the check failing, it's the check working. Every override is a place where someone looked at a plan and consciously accepted its cost. The queries you want to catch are the ones nobody looked at.
+A low default turns the check into a tripwire. Any query whose plan exceeds it stops and demands a human decision: either optimise the query, or explicitly raise the limit for that one query with a comment explaining why. You should *expect* a fair number of per-query overrides; that isn't the check failing, it's the check working. Every override is a place where someone looked at a plan and consciously accepted its cost. The queries you want to catch are the ones nobody looked at.
 
-Set `rowEstimateTolerance` loosely at first — real optimizer estimates are routinely a few times out even on healthy plans, and multi-join queries legitimately compound estimation error up the tree. Start around `10`, and tighten toward the smallest value that doesn't produce noise. Its job is to catch *gross* misestimation from bad statistics, not to demand a perfect planner.
+Set `rowEstimateTolerance` loosely at first: real optimizer estimates are routinely a few times out even on healthy plans, and multi-join queries legitimately compound estimation error up the tree. Start around `10`, and tighten toward the smallest value that doesn't produce noise. Its job is to catch *gross* misestimation from bad statistics, not to demand a perfect planner.
 
 ## Testing every query
 
@@ -274,7 +274,7 @@ import * as reservations from './reservations.ts';
 
 // Each query is either tested with representative arguments and (optional)
 // limit overrides, or explicitly skipped with a reason. A query that appears
-// in the module but not here fails the coverage test below — it can't be
+// in the module but not here fails the coverage test below, so it can't be
 // silently untested.
 const THRESHOLDS: Record<keyof typeof reservations, Case[]> = {
   findReservationsByRoom: [
@@ -315,22 +315,22 @@ This pattern lives in *your* test, not in the library, because every test framew
 
 ## Getting realistic data
 
-**This is the part that determines whether any of it means anything.** A query plan is only as representative as the data it ran against. The optimizer chooses plans from the *shape* of your data — how many distinct values a column has, which values are common, how rows correlate — not just the row count. Run `EXPLAIN ANALYZE` against a hundred uniformly-random rows and you'll get plans that have nothing to do with production. The missing index that scans 5 million rows looks free against 100.
+**This is the part that determines whether any of it means anything.** A query plan is only as representative as the data it ran against. The optimizer chooses plans from the *shape* of your data (how many distinct values a column has, which values are common, how rows correlate), not just the row count. Run `EXPLAIN ANALYZE` against a hundred uniformly-random rows and you'll get plans that have nothing to do with production. The missing index that scans 5 million rows looks free against 100.
 
 So the goal is a test database whose **volume and distribution approximate production**: roughly the right number of rows, and roughly the right skew (some values common, some rare; seasonal peaks; realistic fan-out between related tables).
 
 Database-agnostic ways to get there, cheapest first:
 
-1. **[drizzle-seed](https://github.com/drizzle-team/drizzle-orm/tree/main/drizzle-seed)** — generate shaped data directly from your Drizzle schema, with weighted distributions and one-to-many fan-out. Lowest barrier to entry; see the [worked example](#worked-example-a-hotel-chain) below.
-2. **Generated SQL loaded with `COPY`** — for larger datasets, generate the rows as a `.sql` file of `COPY` blocks and load that. Bulk-loading is dramatically faster than row-by-row inserts.
-3. **Bake the loaded database into a Docker image** — build the data once, freeze it into an image, and start a disposable container per test run. Everyone gets an identical, instant, production-shaped database with no per-run seeding cost.
+1. **[drizzle-seed](https://github.com/drizzle-team/drizzle-orm/tree/main/drizzle-seed)**: generate shaped data directly from your Drizzle schema, with weighted distributions and one-to-many fan-out. Lowest barrier to entry; see the [worked example](#worked-example-a-hotel-chain) below.
+2. **Generated SQL loaded with `COPY`**: for larger datasets, generate the rows as a `.sql` file of `COPY` blocks and load that. Bulk-loading is dramatically faster than row-by-row inserts.
+3. **Bake the loaded database into a Docker image**: build the data once, freeze it into an image, and start a disposable container per test run. Everyone gets an identical, instant, production-shaped database with no per-run seeding cost.
 
 Then reach for **database-specific** levers to make the build faster and the plans more faithful. On PostgreSQL, for example:
 
-- **`UNLOGGED` tables** during the load skip the write-ahead log, making bulk seeding substantially faster. (Set them back to `LOGGED`, or accept that the data doesn't survive a crash — fine for a disposable test database.)
-- **`VACUUM (ANALYZE, FREEZE)`** after loading. `ANALYZE` gathers the statistics the optimizer relies on — *without this step your plans are based on nothing and the whole exercise is void*. `FREEZE` stops PostgreSQL rewriting tuples later for transaction-ID wraparound, which keeps a baked image's files stable.
+- **`UNLOGGED` tables** during the load skip the write-ahead log, making bulk seeding substantially faster. (Set them back to `LOGGED`, or accept that the data doesn't survive a crash, which is fine for a disposable test database.)
+- **`VACUUM (ANALYZE, FREEZE)`** after loading. `ANALYZE` gathers the statistics the optimizer relies on; *without this step your plans are based on nothing and the whole exercise is void*. `FREEZE` stops PostgreSQL rewriting tuples later for transaction-ID wraparound, which keeps a baked image's files stable.
 
-These are illustrative — every database has its own equivalents. The principle is universal: **get the volume and distribution right, and make sure the optimizer's statistics are current**, or the plans you're asserting on aren't the plans production will use.
+These are illustrative; every database has its own equivalents. The principle is universal: **get the volume and distribution right, and make sure the optimizer's statistics are current**, or the plans you're asserting on aren't the plans production will use.
 
 ## Worked examples
 
@@ -344,12 +344,12 @@ The [`hotel-chain`](examples/hotel-chain) example models one hotel booking syste
 
 ### hotel-chain
 
-It models a hotel booking system — `chain → hotel → room → reservation` — seeded to a production-like shape with drizzle-seed, and performance-tests a handful of representative queries against both PostgreSQL and MariaDB.
+It models a hotel booking system (`chain → hotel → room → reservation`) seeded to a production-like shape with drizzle-seed, and performance-tests a handful of representative queries against both PostgreSQL and MariaDB.
 
-The schema skews room grades (most rooms `standard`, few `penthouse`) and concentrates reservations in summer, so date-range and grade predicates have realistically different selectivity — which is what makes the optimizer's plan choices interesting to test.
+The schema skews room grades (most rooms `standard`, few `penthouse`) and concentrates reservations in summer, so date-range and grade predicates have realistically different selectivity, which is what makes the optimizer's plan choices interesting to test.
 
 ```ts
-// seed.ts — shape the data, don't just fill it
+// seed.ts: shape the data, don't just fill it
 import { seed } from 'drizzle-seed';
 import * as schema from './schema.ts';
 
@@ -383,11 +383,11 @@ await seed(db, schema, { seed: 1 }).refine((f) => ({
 }));
 ```
 
-> **A note on drizzle-seed and scale.** drizzle-seed populates data using batched multi-row `INSERT`s, not PostgreSQL's `COPY`. That makes it wonderfully convenient — it works straight from your schema with no extra tooling — but noticeably slower for large datasets; in informal testing, `COPY` was roughly **4× faster per row**. For the volumes in this example it's fine. When you outgrow it, move to the generated-SQL-plus-`COPY` approach (a second worked example is planned). The Drizzle team is [tracking a request](https://github.com/drizzle-team/drizzle-orm/issues/4133) for drizzle-seed to emit a `seed.sql` file, which would give a faster, file-based path directly from the same schema.
+> **A note on drizzle-seed and scale.** drizzle-seed populates data using batched multi-row `INSERT`s, not PostgreSQL's `COPY`. That makes it wonderfully convenient (it works straight from your schema with no extra tooling) but noticeably slower for large datasets; in informal testing, `COPY` was roughly **4× faster per row**. For the volumes in this example it's fine. When you outgrow it, move to the generated-SQL-plus-`COPY` approach (a second worked example is planned). The Drizzle team is [tracking a request](https://github.com/drizzle-team/drizzle-orm/issues/4133) for drizzle-seed to emit a `seed.sql` file, which would give a faster, file-based path directly from the same schema.
 
 ## Drivers
 
-The mechanism is general: wrap the query in a transaction, ask the database to `EXPLAIN ANALYZE` it, translate the database's plan into a common shape, check the limits, roll back. Only two pieces are database-specific — the exact `EXPLAIN` syntax, and the structure of the plan the database returns — and both live entirely inside a driver.
+The mechanism is general: wrap the query in a transaction, ask the database to `EXPLAIN ANALYZE` it, translate the database's plan into a common shape, check the limits, roll back. Only two pieces are database-specific: the exact `EXPLAIN` syntax, and the structure of the plan the database returns. Both live entirely inside a driver.
 
 A driver's only job is to run the right `EXPLAIN`, execute the statement, and translate the result into a normalized plan node:
 
@@ -403,11 +403,11 @@ interface PlanNode {
 }
 ```
 
-The core walks that normalized tree — it never sees a vendor-specific plan key — so support for a new database is a new driver, not a change to the engine. `type` keeps the database's own label for rendering; `operation` is the driver's mapping of that node onto the normalized [`Operation`](#disallowoperations) category the `disallowOperations` check tests against (left unset where the driver can't classify it). The raw, untranslated plan is preserved in `analysis.plan` because that's the format you already know how to read.
+The core walks that normalized tree and never sees a vendor-specific plan key, so support for a new database is a new driver, not a change to the engine. `type` keeps the database's own label for rendering; `operation` is the driver's mapping of that node onto the normalized [`Operation`](#disallowoperations) category the `disallowOperations` check tests against (left unset where the driver can't classify it). The raw, untranslated plan is preserved in `analysis.plan` because that's the format you already know how to read.
 
 ### Transparent execution
 
-Because your callback may consume the rows its query returned — processing the results, deriving a second query's parameters from them, or branching on how many came back — `drizzle-explain` executes each statement for real, not just under `EXPLAIN`. There is no single-execution shortcut: neither PostgreSQL's `EXPLAIN (ANALYZE, FORMAT JSON)` nor MariaDB's `ANALYZE FORMAT=JSON` returns the query's rows, only its plan. So every statement runs twice inside the rolled-back transaction, bracketed by a savepoint so its effects land exactly once:
+Because your callback may consume the rows its query returned (processing the results, deriving a second query's parameters from them, or branching on how many came back), `drizzle-explain` executes each statement for real, not just under `EXPLAIN`. There is no single-execution shortcut: neither PostgreSQL's `EXPLAIN (ANALYZE, FORMAT JSON)` nor MariaDB's `ANALYZE FORMAT=JSON` returns the query's rows, only its plan. So every statement runs twice inside the rolled-back transaction, bracketed by a savepoint so its effects land exactly once:
 
 ```
 SAVEPOINT drizzle_explain
@@ -419,7 +419,7 @@ ROLLBACK TO SAVEPOINT             -- effects undone
 The plan is therefore measured against exactly the state the real execution sees, and the callback receives exactly the rows production would. Two consequences are worth knowing:
 
 - Each statement executes twice, so a run takes roughly twice as long as the query itself.
-- Anything not covered by transactional rollback happens twice — most commonly sequence advancement, so an auto-generated id may jump by two per inserted row. Nothing is committed either way.
+- Anything not covered by transactional rollback happens twice, most commonly sequence advancement, so an auto-generated id may jump by two per inserted row. Nothing is committed either way.
 
 ### Supported databases
 
@@ -430,11 +430,11 @@ The plan is therefore measured against exactly the state the real execution sees
 | maxCost                | ✓                          | ✓                         |
 | disallowOperations     | ✓                          | ✓                         |
 
-Both databases expose the signals `drizzle-explain` needs. PostgreSQL's `EXPLAIN (ANALYZE, FORMAT JSON)` and MariaDB's `ANALYZE FORMAT=JSON` each report estimated rows, actual rows, and a plan cost — MariaDB carries a per-node `cost` on the query block and its access nodes (verified against MariaDB 11.8), so `maxCost` is enforced on both. A trivial `const` primary-key lookup is the one case where MariaDB omits a cost; there the analyser simply skips `maxCost` rather than failing.
+Both databases expose the signals `drizzle-explain` needs. PostgreSQL's `EXPLAIN (ANALYZE, FORMAT JSON)` and MariaDB's `ANALYZE FORMAT=JSON` each report estimated rows, actual rows, and a plan cost. MariaDB carries a per-node `cost` on the query block and its access nodes (verified against MariaDB 11.8), so `maxCost` is enforced on both. A trivial `const` primary-key lookup is the one case where MariaDB omits a cost; there the analyser simply skips `maxCost` rather than failing.
 
 ### Why not SQLite
 
-SQLite can't be supported, and it's worth being clear about why. `drizzle-explain` works by comparing the optimizer's cost and row *estimates* against reality. SQLite's `EXPLAIN QUERY PLAN` doesn't produce those numbers — it describes the plan it chose (which tables, which indexes, in what order) but reports no cost figure and no per-node row estimates or actuals. There's simply nothing to threshold. This isn't a gap we've chosen to leave open; SQLite's optimizer doesn't expose the signals the technique depends on. If you use SQLite, the equivalent discipline is to inspect `EXPLAIN QUERY PLAN` output for unexpected full-table scans by eye.
+SQLite can't be supported, and it's worth being clear about why. `drizzle-explain` works by comparing the optimizer's cost and row *estimates* against reality. SQLite's `EXPLAIN QUERY PLAN` doesn't produce those numbers; it describes the plan it chose (which tables, which indexes, in what order) but reports no cost figure and no per-node row estimates or actuals. There's simply nothing to threshold. This isn't a gap we've chosen to leave open; SQLite's optimizer doesn't expose the signals the technique depends on. If you use SQLite, the equivalent discipline is to inspect `EXPLAIN QUERY PLAN` output for unexpected full-table scans by eye.
 
 ## License
 
