@@ -97,8 +97,8 @@ Creates an `explain` function bound to a driver and a set of default limits.
 
 Runs the query returned by `fn` through `EXPLAIN ANALYZE` and returns an analysis.
 
-- **fn** — `(db) => query`. Receives an instrumented Drizzle database and returns a single Drizzle query.
-- **overrides** — `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, merged over the defaults for this call only. To permit an operation your default bans for one specific query, pass `{ allowOperations: [Operation.SEQ_SCAN] }` — it lifts *only* that operation's ban for that call and leaves the rest of the default `disallowOperations` list intact (see [disallowOperations](#disallowoperations)).
+- **fn** — `(db) => query`. Receives an instrumented Drizzle database and returns a single Drizzle query, or — when checking several statements — awaits them in order (see [Multiple statements](#multiple-statements)).
+- **overrides** — `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, merged over the defaults for this call only; or an array of those, one per statement, to check a callback that issues several (see [Multiple statements](#multiple-statements)). To permit an operation your default bans for one specific query, pass `{ allowOperations: [Operation.SEQ_SCAN] }` — it lifts *only* that operation's ban for that call and leaves the rest of the default `disallowOperations` list intact (see [disallowOperations](#disallowoperations)).
 
 Exactly one statement must be executed per call. If `fn` runs zero or more than one statement, `explain` throws — a single query is the unit of measurement. To check a function that legitimately issues several, pass an array of limits (see [Multiple statements](#multiple-statements)).
 
