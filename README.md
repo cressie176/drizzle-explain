@@ -321,7 +321,7 @@ So the goal is a test database whose **volume and distribution approximate produ
 
 Database-agnostic ways to get there, cheapest first:
 
-1. **[drizzle-seed](https://github.com/drizzle-team/drizzle-orm/tree/main/drizzle-seed)**: generate shaped data directly from your Drizzle schema, with weighted distributions and one-to-many fan-out. Lowest barrier to entry; see the [worked example](#worked-example-a-hotel-chain) below.
+1. **[drizzle-seed](https://github.com/drizzle-team/drizzle-orm/tree/main/drizzle-seed)**: generate shaped data directly from your Drizzle schema, with weighted distributions and one-to-many fan-out. Lowest barrier to entry; see the [worked example](#hotel-chain) below.
 2. **[drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed)**: for larger datasets, generate the rows as bulk SQL files (PostgreSQL `COPY` blocks, with MariaDB and CSV equivalents) straight from the same Drizzle schema, reproducibly from a seed, and load those. Bulk-loading is dramatically faster than row-by-row inserts, and its drift checks fail the build when a table or column is added without a generation rule.
 3. **Bake the loaded database into a Docker image**: build the data once, freeze it into an image, and start a disposable container per test run. Everyone gets an identical, instant, production-shaped database with no per-run seeding cost.
 
@@ -334,7 +334,7 @@ These are illustrative; every database has its own equivalents. The principle is
 
 ## Worked examples
 
-The [`hotel-chain`](examples/hotel-chain) example models one hotel booking system and performance-tests it against both databases from a single npm workspace. The two drivers share a domain, a seeding shape, and the `THRESHOLDS`-map test pattern; only the connection and the dialect-specific schema differ:
+The [`hotel-chain`](examples/hotel-chain) example models one hotel booking system and performance-tests it against both databases from a single npm workspace, seeded by either drizzle-seed or drizzle-super-seed. All four packages share a domain, a seeding shape, and the `THRESHOLDS`-map test pattern; only the connection, the dialect-specific schema and the seeding path differ:
 
 | Example | Database | Seeding | Status |
 |---|---|---|---|
@@ -345,7 +345,7 @@ The [`hotel-chain`](examples/hotel-chain) example models one hotel booking syste
 
 ### hotel-chain
 
-It models a hotel booking system (`chain → hotel → room → reservation`) seeded to a production-like shape with drizzle-seed, and performance-tests a handful of representative queries against both PostgreSQL and MariaDB.
+It models a hotel booking system (`chain → hotel → room → reservation`) seeded to a production-like shape with drizzle-seed or drizzle-super-seed, and performance-tests a handful of representative queries against both PostgreSQL and MariaDB.
 
 The schema skews room grades (most rooms `standard`, few `penthouse`) and concentrates reservations in summer, so date-range and grade predicates have realistically different selectivity, which is what makes the optimizer's plan choices interesting to test.
 
