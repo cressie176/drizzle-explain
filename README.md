@@ -322,7 +322,7 @@ So the goal is a test database whose **volume and distribution approximate produ
 Database-agnostic ways to get there, cheapest first:
 
 1. **[drizzle-seed](https://github.com/drizzle-team/drizzle-orm/tree/main/drizzle-seed)**: generate shaped data directly from your Drizzle schema, with weighted distributions and one-to-many fan-out. Lowest barrier to entry; see the [worked example](#worked-example-a-hotel-chain) below.
-2. **Generated SQL loaded with `COPY`**: for larger datasets, generate the rows as a `.sql` file of `COPY` blocks and load that. Bulk-loading is dramatically faster than row-by-row inserts.
+2. **[drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed)**: for larger datasets, generate the rows as bulk SQL files (PostgreSQL `COPY` blocks, with MariaDB and CSV equivalents) straight from the same Drizzle schema, reproducibly from a seed, and load those. Bulk-loading is dramatically faster than row-by-row inserts, and its drift checks fail the build when a table or column is added without a generation rule.
 3. **Bake the loaded database into a Docker image**: build the data once, freeze it into an image, and start a disposable container per test run. Everyone gets an identical, instant, production-shaped database with no per-run seeding cost.
 
 Then reach for **database-specific** levers to make the build faster and the plans more faithful. On PostgreSQL, for example:
@@ -340,7 +340,7 @@ The [`hotel-chain`](examples/hotel-chain) example models one hotel booking syste
 |---|---|---|---|
 | [hotel-chain/drizzle-seed-postgres](examples/hotel-chain/drizzle-seed-postgres) | PostgreSQL | drizzle-seed | available |
 | [hotel-chain/drizzle-seed-mariadb](examples/hotel-chain/drizzle-seed-mariadb) | MariaDB | drizzle-seed | available |
-| hotel-chain (COPY variant) | PostgreSQL | generated SQL + COPY | planned |
+| hotel-chain (COPY variant) | PostgreSQL | drizzle-super-seed | planned |
 
 ### hotel-chain
 
@@ -383,7 +383,7 @@ await seed(db, schema, { seed: 1 }).refine((f) => ({
 }));
 ```
 
-> **A note on drizzle-seed and scale.** drizzle-seed populates data using batched multi-row `INSERT`s, not PostgreSQL's `COPY`. That makes it wonderfully convenient (it works straight from your schema with no extra tooling) but noticeably slower for large datasets; in informal testing, `COPY` was roughly **4× faster per row**. For the volumes in this example it's fine. When you outgrow it, move to the generated-SQL-plus-`COPY` approach (a second worked example is planned). The Drizzle team is [tracking a request](https://github.com/drizzle-team/drizzle-orm/issues/4133) for drizzle-seed to emit a `seed.sql` file, which would give a faster, file-based path directly from the same schema.
+> **A note on drizzle-seed and scale.** drizzle-seed populates data using batched multi-row `INSERT`s, not PostgreSQL's `COPY`. That makes it wonderfully convenient (it works straight from your schema with no extra tooling) but noticeably slower for large datasets; in informal testing, `COPY` was roughly **4× faster per row**. For the volumes in this example it's fine. When you outgrow it, [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed) generates bulk SQL files directly from the same Drizzle schema (a second worked example is planned).
 
 ## Drivers
 
