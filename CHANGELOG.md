@@ -4,7 +4,19 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 1.1.0
+## [1.1.1] - 2026-08-28
+
+Examples and documentation only; the published library is unchanged from 1.1.0.
+
+### Added
+
+- Worked examples seeding the hotel-chain dataset with [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed): the identical million-reservation dataset bulk-loads via COPY on PostgreSQL and extended INSERTs on MariaDB, cutting measured seed times from 14.6 to 3.1 seconds and from 8.7 to 6.0 seconds respectively.
+
+### Changed
+
+- The README's guidance on getting realistic data now recommends drizzle-super-seed for bulk seeding and records the measured seed-time comparisons in the worked examples table.
+
+## [1.1.0] - 2026-08-27
 
 ### Added
 
@@ -13,7 +25,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `MultiStatementAnalysis`, returned by the array form: `passed`, `message`, and one `Analysis` per statement, each with its own limits and raw plan. `passed` and `message` mean what they always did, so the assertion you write is unchanged ([#16](https://github.com/cressie176/drizzle-explain/issues/16)).
 - Failure messages for the array form name each failing statement by position, SQL, and the parameters it actually ran with, including values derived from an earlier statement's results. Passing statements are omitted ([#16](https://github.com/cressie176/drizzle-explain/issues/16)).
 - `ExplainedStatement` records the `sql` and `params` each statement ran with ([#15](https://github.com/cressie176/drizzle-explain/issues/15)).
-- Worked examples seeding the hotel-chain dataset with [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed): the identical million-reservation dataset bulk-loads via COPY on PostgreSQL and extended INSERTs on MariaDB, cutting measured seed times from 14.6 to 3.1 seconds and from 8.7 to 6.0 seconds respectively.
 - Callbacks that issue statements concurrently are safe. The driver serializes each statement's explain-and-execute sequence within a run and drains in-flight statements before rolling back, so `Promise.all` pairs with limits in array order and a raced statement (`Promise.race`) is still measured and counted. Without this, overlapping statements could interleave their savepoints and silently corrupt the state the plans are measured against ([#17](https://github.com/cressie176/drizzle-explain/issues/17)).
 
 ### Changed
@@ -24,7 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The `Driver` contract now requires `sql` and `params` on every `ExplainedStatement`. This is a type-level break for third-party driver implementations; the bundled PostgreSQL and MariaDB drivers are unaffected ([#15](https://github.com/cressie176/drizzle-explain/issues/15)).
 
-## 1.0.0 - 2026-08-23
+## [1.0.0] - 2026-08-23
 
 First stable release. No functional change from 0.1.1.
 
@@ -33,7 +44,7 @@ First stable release. No functional change from 0.1.1.
 - Coverage reporting and published status badges.
 - Documentation of the renderer's colour behaviour under `NO_COLOR`, `FORCE_COLOR`, and `CI`.
 
-## 0.1.1 - 2026-08-23
+## [0.1.1] - 2026-08-23
 
 Initial release.
 
@@ -48,6 +59,7 @@ Initial release.
 - Annotated plan renderer. On failure, `message` is the plan tree with the offending nodes marked, suitable for printing straight into an assertion failure. Breach markers are coloured on an interactive terminal and honour `NO_COLOR`, `FORCE_COLOR`, and `CI`.
 - Worked examples under `examples/hotel-chain`, performance-testing one booking domain against both databases from a single npm workspace.
 
-[Unreleased]: https://github.com/cressie176/drizzle-explain/compare/v1.0.0...HEAD
+[1.1.1]: https://github.com/cressie176/drizzle-explain/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/cressie176/drizzle-explain/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/cressie176/drizzle-explain/compare/v0.1.1...v1.0.0
 [0.1.1]: https://github.com/cressie176/drizzle-explain/releases/tag/v0.1.1
