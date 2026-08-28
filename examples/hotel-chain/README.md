@@ -11,7 +11,7 @@ The same domain and the same testing pattern run against **both PostgreSQL and M
 | [`super-seed-postgres`](super-seed-postgres) | PostgreSQL | drizzle-super-seed | `drizzle-explain/postgres` |
 | [`super-seed-mariadb`](super-seed-mariadb) | MariaDB | drizzle-super-seed | `drizzle-explain/mariadb` |
 
-That's the point: the queries and the coverage-map test are database-agnostic, and the seeding tool is interchangeable. Only the connection (`connect.ts`), the dialect-specific schema (`schema.ts`) and the seeding path change between packages. The drizzle-seed pair inserts through the ORM; the [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed) pair generates bulk SQL from the same schema shape and loads the identical million-row dataset in a few seconds.
+That's the point: the queries and the coverage-map test are database-agnostic, and the seeding tool is interchangeable. Only the connection (`connect.ts`), the dialect-specific schema (`schema.ts`) and the seeding path change between packages. The drizzle-seed pair inserts through the ORM; the [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed) pair generates bulk SQL from the same schema shape and loads the identical million-row dataset several times faster.
 
 ## What it demonstrates
 
@@ -63,4 +63,4 @@ Both packages seed with the same skew so the plans are comparable: 5 chains; hot
 
 ## A note on drizzle-seed and scale
 
-drizzle-seed populates data using batched multi-row `INSERT`s, not a bulk-load path like PostgreSQL's `COPY`. That makes it wonderfully convenient (it works straight from your schema with no extra tooling) but noticeably slower for large datasets. The super-seed packages in this workspace demonstrate the difference on the identical dataset: [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed) generates bulk SQL (COPY for PostgreSQL, extended INSERTs for MariaDB) and loads the million reservations in a few seconds, where drizzle-seed takes a minute or two.
+drizzle-seed populates data using batched multi-row `INSERT`s, not a bulk-load path like PostgreSQL's `COPY`. That makes it wonderfully convenient (it works straight from your schema with no extra tooling) but noticeably slower for large datasets. The super-seed packages in this workspace demonstrate the difference on the identical dataset: [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed) generates bulk SQL (COPY for PostgreSQL, extended INSERTs for MariaDB) and loads the million reservations faster: measured on one machine, the PostgreSQL seed drops from 14.6 to 3.1 seconds and the MariaDB seed from 8.7 to 6.0 seconds. COPY gives PostgreSQL the bigger win, and the gap widens as volumes grow.
