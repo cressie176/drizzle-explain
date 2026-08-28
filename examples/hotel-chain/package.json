@@ -3,15 +3,25 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "drizzle-explain worked examples: one hotel booking system, seeded with drizzle-seed, performance-tested against PostgreSQL and MariaDB",
-  "workspaces": ["drizzle-seed-postgres", "drizzle-seed-mariadb"],
+  "description": "drizzle-explain worked examples: one hotel booking system, seeded with drizzle-seed or drizzle-super-seed, performance-tested against PostgreSQL and MariaDB",
+  "workspaces": [
+    "drizzle-seed-postgres",
+    "drizzle-seed-mariadb",
+    "super-seed-postgres",
+    "super-seed-mariadb"
+  ],
   "scripts": {
-    "seed": "npm run seed --workspaces",
+    "seed": "npm run seed --workspace drizzle-seed-postgres --workspace drizzle-seed-mariadb",
     "seed:postgres": "npm run seed --workspace drizzle-seed-postgres",
     "seed:mariadb": "npm run seed --workspace drizzle-seed-mariadb",
+    "seed:super": "npm run seed --workspace super-seed-postgres --workspace super-seed-mariadb",
+    "seed:super-postgres": "npm run seed --workspace super-seed-postgres",
+    "seed:super-mariadb": "npm run seed --workspace super-seed-mariadb",
     "test": "npm run test --workspaces",
     "test:postgres": "npm run test --workspace drizzle-seed-postgres",
     "test:mariadb": "npm run test --workspace drizzle-seed-mariadb",
+    "test:super-postgres": "npm run test --workspace super-seed-postgres",
+    "test:super-mariadb": "npm run test --workspace super-seed-mariadb",
     "typecheck": "npm run typecheck --workspaces"
   }
 }

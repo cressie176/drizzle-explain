@@ -2,14 +2,16 @@
 
 A complete, runnable [`drizzle-explain`](../..) example. It models a hotel booking system — `chain → hotel → room → reservation` — seeds it to a production-like shape with [drizzle-seed](https://github.com/drizzle-team/drizzle-orm/tree/main/drizzle-seed), and performance-tests a handful of representative queries with `EXPLAIN ANALYZE` inside an always-rolled-back transaction.
 
-The same domain and the same testing pattern run against **both PostgreSQL and MariaDB**, as two packages in one npm workspace:
+The same domain and the same testing pattern run against **both PostgreSQL and MariaDB**, seeded by **two different tools**, as four packages in one npm workspace:
 
-| Package | Database | Driver |
-|---|---|---|
-| [`drizzle-seed-postgres`](drizzle-seed-postgres) | PostgreSQL | `drizzle-explain/postgres` |
-| [`drizzle-seed-mariadb`](drizzle-seed-mariadb) | MariaDB | `drizzle-explain/mariadb` |
+| Package | Database | Seeding | Driver |
+|---|---|---|---|
+| [`drizzle-seed-postgres`](drizzle-seed-postgres) | PostgreSQL | drizzle-seed | `drizzle-explain/postgres` |
+| [`drizzle-seed-mariadb`](drizzle-seed-mariadb) | MariaDB | drizzle-seed | `drizzle-explain/mariadb` |
+| [`super-seed-postgres`](super-seed-postgres) | PostgreSQL | drizzle-super-seed | `drizzle-explain/postgres` |
+| [`super-seed-mariadb`](super-seed-mariadb) | MariaDB | drizzle-super-seed | `drizzle-explain/mariadb` |
 
-That's the point: the queries and the coverage-map test are database-agnostic. Only the connection (`connect.ts`) and the dialect-specific schema (`schema.ts`) change between the two.
+That's the point: the queries and the coverage-map test are database-agnostic, and the seeding tool is interchangeable. Only the connection (`connect.ts`), the dialect-specific schema (`schema.ts`) and the seeding path change between packages. The drizzle-seed pair inserts through the ORM; the [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed) pair generates bulk SQL from the same schema shape and loads the identical million-row dataset in a few seconds.
 
 ## What it demonstrates
 
@@ -30,12 +32,15 @@ npm run db:up            # or: docker compose up -d
 
 # 2. Install the workspace (from this directory)
 cd examples/hotel-chain
-npm install              # installs both packages via npm workspaces
+npm install              # installs all packages via npm workspaces
 
-# 3. Seed and test — both databases, or one at a time
-npm run seed             # seed both; or seed:postgres / seed:mariadb
-npm test                 # test both;  or test:postgres  / test:mariadb
+# 3. Seed with either tool, then test
+npm run seed             # drizzle-seed, both databases; or seed:postgres / seed:mariadb
+npm run seed:super       # drizzle-super-seed, both databases (seconds rather than minutes)
+npm test                 # test everything; or test:postgres / test:super-postgres / ...
 ```
+
+Both seeding paths populate the same tables with the same shape, so either one satisfies every package's tests. Run whichever you are exploring; the most recent seed wins.
 
 Each `seed` is idempotent — it drops and recreates its own tables, then runs `ANALYZE` so the optimizer's statistics are current. **Without current statistics the optimizer plans against nothing and the whole exercise is void.**
 
@@ -50,11 +55,12 @@ Both packages seed with the same skew so the plans are comparable: 5 chains; hot
 | File | Purpose |
 |---|---|
 | `schema.ts` | Drizzle schema for `chain → hotel → room → reservation`, with the indexes the queries rely on |
-| `seed.ts` | Drops/recreates tables, seeds shaped data with drizzle-seed, refreshes statistics |
+| `seed.ts` | Drops/recreates tables, seeds shaped data, refreshes statistics |
+| `rules.ts` | (super-seed packages) per-column generation rules and parent-child counts |
 | `queries.ts` | Exported query functions under test |
 | `performance.test.ts` | Coverage-enforced `THRESHOLDS` map and per-query assertions |
 | `connect.ts` | Database connection |
 
 ## A note on drizzle-seed and scale
 
-drizzle-seed populates data using batched multi-row `INSERT`s, not a bulk-load path like PostgreSQL's `COPY`. That makes it wonderfully convenient — it works straight from your schema with no extra tooling — but noticeably slower for large datasets; in informal testing, `COPY` was roughly **4× faster per row**. For the volumes here (a few hundred thousand rows) it's fine. When you outgrow it, move to a generated-SQL-plus-`COPY` approach. The Drizzle team is [tracking a request](https://github.com/drizzle-team/drizzle-orm/issues/4133) for drizzle-seed to emit a `seed.sql` file, which would give a faster, file-based path directly from the same schema.
+drizzle-seed populates data using batched multi-row `INSERT`s, not a bulk-load path like PostgreSQL's `COPY`. That makes it wonderfully convenient (it works straight from your schema with no extra tooling) but noticeably slower for large datasets. The super-seed packages in this workspace demonstrate the difference on the identical dataset: [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed) generates bulk SQL (COPY for PostgreSQL, extended INSERTs for MariaDB) and loads the million reservations in a few seconds, where drizzle-seed takes a minute or two.

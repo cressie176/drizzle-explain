@@ -340,7 +340,8 @@ The [`hotel-chain`](examples/hotel-chain) example models one hotel booking syste
 |---|---|---|---|
 | [hotel-chain/drizzle-seed-postgres](examples/hotel-chain/drizzle-seed-postgres) | PostgreSQL | drizzle-seed | available |
 | [hotel-chain/drizzle-seed-mariadb](examples/hotel-chain/drizzle-seed-mariadb) | MariaDB | drizzle-seed | available |
-| hotel-chain (COPY variant) | PostgreSQL | drizzle-super-seed | planned |
+| [hotel-chain/super-seed-postgres](examples/hotel-chain/super-seed-postgres) | PostgreSQL | drizzle-super-seed | available |
+| [hotel-chain/super-seed-mariadb](examples/hotel-chain/super-seed-mariadb) | MariaDB | drizzle-super-seed | available |
 
 ### hotel-chain
 
@@ -383,7 +384,7 @@ await seed(db, schema, { seed: 1 }).refine((f) => ({
 }));
 ```
 
-> **A note on drizzle-seed and scale.** drizzle-seed populates data using batched multi-row `INSERT`s, not PostgreSQL's `COPY`. That makes it wonderfully convenient (it works straight from your schema with no extra tooling) but noticeably slower for large datasets; in informal testing, `COPY` was roughly **4× faster per row**. For the volumes in this example it's fine. When you outgrow it, [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed) generates bulk SQL files directly from the same Drizzle schema (a second worked example is planned).
+> **A note on drizzle-seed and scale.** drizzle-seed populates data using batched multi-row `INSERT`s, not PostgreSQL's `COPY`. That makes it wonderfully convenient (it works straight from your schema with no extra tooling) but noticeably slower for large datasets; in informal testing, `COPY` was roughly **4× faster per row**. For the volumes in this example it's fine. When you outgrow it, [drizzle-super-seed](https://www.npmjs.com/package/drizzle-super-seed) generates bulk SQL files directly from the same Drizzle schema; the [super-seed packages](examples/hotel-chain) load the identical million-row dataset in a few seconds.
 
 ## Drivers
 
