@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-09-01
+
+### Fixed
+
+- The drizzle-orm peer dependency range now admits 1.0.0 pre-releases (`>=0.36 || >=1.0.0-beta.1`), so projects on a drizzle 1.0.0 beta or release candidate install without an ERESOLVE failure. Semver ranges never match pre-release versions, so the previous `>=0.36` made npm reject otherwise-compatible installs. The library needed no code changes: the full test suite passes unchanged against 1.0.0-beta.22 and 1.0.0-rc.4, and fresh installs that do not pin drizzle-orm still resolve the stable release.
+
 ## [1.1.1] - 2026-08-28
 
 Examples and documentation only; the published library is unchanged from 1.1.0.

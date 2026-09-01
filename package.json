@@ -32,7 +32,7 @@
     "db:down": "docker compose down"
   },
   "peerDependencies": {
-    "drizzle-orm": ">=0.36"
+    "drizzle-orm": ">=0.36 || >=1.0.0-beta.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
