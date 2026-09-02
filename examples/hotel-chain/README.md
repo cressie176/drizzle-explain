@@ -1,6 +1,6 @@
 # hotel-chain
 
-A complete, runnable [`drizzle-explain`](../..) example. It models a hotel booking system — `chain → hotel → room → reservation`, with a small `grades` reference table — seeds it to a production-like shape with [drizzle-seed](https://github.com/drizzle-team/drizzle-orm/tree/main/drizzle-seed), and performance-tests a handful of representative queries with `EXPLAIN ANALYZE` inside an always-rolled-back transaction.
+A complete, runnable [`drizzle-explain`](../..) example. It models a hotel booking system (`chain → hotel → room → reservation`, with a small `grades` reference table), seeds it to a production-like shape with [drizzle-seed](https://github.com/drizzle-team/drizzle-orm/tree/main/drizzle-seed), and performance-tests a handful of representative queries with `EXPLAIN ANALYZE` inside an always-rolled-back transaction.
 
 The same domain and the same testing pattern run against **both PostgreSQL and MariaDB**, seeded by **two different tools**, as four packages in one npm workspace:
 

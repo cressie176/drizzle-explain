@@ -4,6 +4,7 @@ const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
 const { eq, sql, TransactionRollbackError } = require('drizzle-orm');
 const { mariadbDriver } = require('../../mariadb');
 const { Operation } = require('../../lib/operation');
+const mysql = require('mysql2/promise');
 const { connect } = require('./connect');
 
 const widgets = mysqlTable('widgets', {
@@ -450,6 +451,49 @@ describe('mariadbDriver', () => {
         driver.explain((db) => db.select().from(missing)),
         /missing_table/,
       );
+    });
+  });
+
+  describe('client shapes', () => {
+    test('accepts a pool and returns the connection it leased', async () => {
+      const pool = mysql.createPool({
+        host: process.env.MARIADB_HOST ?? '127.0.0.1',
+        port: Number(process.env.MARIADB_PORT ?? 3306),
+        user: process.env.MARIADB_USER ?? 'drizzle_explain',
+        password: process.env.MARIADB_PASSWORD ?? 'drizzle_explain',
+        database: process.env.MARIADB_DATABASE ?? 'drizzle_explain',
+        connectionLimit: 1,
+      });
+
+      try {
+        const statements = await mariadbDriver(pool).explain((db) => db.select().from(widgets));
+        equal(statements.length, 1);
+
+        const [rows] = await pool.query('SELECT COUNT(*) AS total FROM widgets');
+        equal(Number(rows[0].total), 3);
+      } finally {
+        await pool.end();
+      }
+    });
+
+    test('rolls back a write made through a pooled connection', async () => {
+      const pool = mysql.createPool({
+        host: process.env.MARIADB_HOST ?? '127.0.0.1',
+        port: Number(process.env.MARIADB_PORT ?? 3306),
+        user: process.env.MARIADB_USER ?? 'drizzle_explain',
+        password: process.env.MARIADB_PASSWORD ?? 'drizzle_explain',
+        database: process.env.MARIADB_DATABASE ?? 'drizzle_explain',
+        connectionLimit: 1,
+      });
+
+      try {
+        await mariadbDriver(pool).explain((db) => db.insert(widgets).values({ id: 500, name: 'p', quantity: 1 }));
+
+        const [rows] = await pool.query('SELECT COUNT(*) AS total FROM widgets WHERE id = 500');
+        equal(Number(rows[0].total), 0);
+      } finally {
+        await pool.end();
+      }
     });
   });
 

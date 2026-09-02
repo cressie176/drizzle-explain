@@ -1,3 +1,4 @@
+import type { Connection, Pool } from 'mysql2/promise';
 import type { Driver } from './lib/index';
 
 /**
@@ -7,6 +8,6 @@ import type { Driver } from './lib/index';
  * can be explained. Parameterize `TDatabase` to type the callback's `db`.
  */
 export function mariadbDriver<TDatabase = unknown>(
-  client: unknown,
+  client: Connection | Pool,
   config?: Record<string, unknown>,
 ): Driver<TDatabase>;

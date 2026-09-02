@@ -6,6 +6,7 @@ const { count, eq, sql, TransactionRollbackError } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
 const { postgresDriver } = require('../../postgres');
 const { Operation } = require('../../lib/operation');
+const { Client } = require('pg');
 const { connect } = require('./connect');
 
 function doNothing() {}
@@ -456,6 +457,30 @@ describe('postgresDriver', () => {
       equal(analysis.passed, false);
       equal(analysis.breaches.length, 1);
       equal(analysis.breaches[0].node.relation, 'inners');
+    });
+  });
+
+  describe('client shapes', () => {
+    test('accepts a single client rather than a pool', async () => {
+      const client = new Client({
+        host: process.env.PGHOST ?? 'localhost',
+        port: process.env.PGPORT ?? 5432,
+        user: process.env.PGUSER ?? 'drizzle_explain',
+        password: process.env.PGPASSWORD ?? 'drizzle_explain',
+        database: process.env.PGDATABASE ?? 'drizzle_explain',
+      });
+      await client.connect();
+
+      try {
+        const statements = await postgresDriver(client).explain((db) => db.select().from(widgets));
+        equal(statements.length, 1);
+
+        await postgresDriver(client).explain((db) => db.insert(widgets).values({ id: 500, name: 'transient' }));
+        const { rows } = await client.query('SELECT id FROM widgets WHERE id = 500');
+        deq(rows, []);
+      } finally {
+        await client.end();
+      }
     });
   });
 

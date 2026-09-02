@@ -61,6 +61,21 @@ jobs:
           MARIADB_PASSWORD: drizzle_explain
           MARIADB_DATABASE: drizzle_explain
 
+  examples:
+    name: Examples typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm ci
+        working-directory: examples/hotel-chain
+      - run: npm run typecheck --workspaces
+        working-directory: examples/hotel-chain
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest

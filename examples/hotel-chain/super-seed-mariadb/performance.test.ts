@@ -52,8 +52,8 @@ const THRESHOLDS: Record<keyof typeof queries, Case[]> = {
     { run: (db) => queries.roomsByGrade(db, 'penthouse'), limits: { maxCost: 100 } },
   ],
 
-  // Counting rooms per grade reads the whole five-row grades table — right at
-  // that size — and reaches rooms through rooms_grade_idx. SEQ_SCAN is banned
+  // Counting rooms per grade reads the whole five-row grades table, right at
+  // that size, and reaches rooms through rooms_grade_idx. SEQ_SCAN is banned
   // and lifted for the lookup alone, and only while it stays small.
   roomCountsByGrade: [
     {

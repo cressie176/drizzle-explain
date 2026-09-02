@@ -36,7 +36,7 @@ const THRESHOLDS: Record<keyof typeof queries, Case[]> = {
   ],
   // Joins the five-row grades lookup. PostgreSQL reads all five rather than
   // using the index, which is the right choice at that size, so SEQ_SCAN is
-  // banned and lifted for that table alone — and only while it stays small.
+  // banned and lifted for that table alone, and only while it stays small.
   // Rooms is reached through rooms_grade_idx, so it needs no exemption.
   roomsByGradeWithLabel: [
     {
@@ -59,7 +59,7 @@ const THRESHOLDS: Record<keyof typeof queries, Case[]> = {
   ],
 
   // Counting every room legitimately reads every room, so both scans are
-  // accepted — but for different reasons, and each says which.
+  // accepted, but for different reasons, and each says which.
   roomCountsByGrade: [
     {
       run: (db) => queries.roomCountsByGrade(db),

@@ -349,4 +349,41 @@ describe('createExplain', () => {
 
     eq(analysis.passed, true);
   });
+
+  describe('unusable limits', () => {
+    test('rejects an unrecognised operation before executing anything', async () => {
+      const driver = countingDriver([]);
+      const explain = createExplain(driver);
+
+      await rejects(
+        explain(() => {}, { limits: { disallowOperations: ['SEQ SCAN'] } }),
+        /unrecognised operation: "SEQ SCAN"/,
+      );
+      eq(driver.runs, 0);
+    });
+
+    test('rejects an unscoped exemption before executing anything', async () => {
+      const driver = countingDriver([]);
+      const explain = createExplain(driver);
+
+      await rejects(
+        explain(() => {}, {
+          limits: { disallowOperations: ['SEQ_SCAN'], allowOperations: [{ operation: 'SEQ_SCAN' }] },
+        }),
+        /names no condition/,
+      );
+      eq(driver.runs, 0);
+    });
+
+    test('checks the limits of every statement, not just the first', async () => {
+      const driver = countingDriver([]);
+      const explain = createExplain(driver);
+
+      await rejects(
+        explain(() => {}, { limits: [{}, { disallowOperations: ['SEQ SCAN'] }] }),
+        /unrecognised operation/,
+      );
+      eq(driver.runs, 0);
+    });
+  });
 });
