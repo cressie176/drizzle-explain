@@ -350,7 +350,7 @@ Five details worth knowing:
 - An operation neither list recognises is rejected, in `disallowOperations` as well. `disallowOperations: ['SEQ SCAN']` would otherwise match nothing and pass, leaving a test that reads as though it asserts something and asserts nothing. Both lists are checked when the limits are read, so the error does not depend on whether the plan happened to contain a matching node.
 - Exemptions are annotated in the failure message, as above, but a plan where nothing else failed produces no message at all, so an exemption on an otherwise clean plan is not reported.
 
-> **Deprecated: the plan-wide form.** Passing a bare `Operation`, `allowOperations: [Operation.SEQ_SCAN]`, lifts the ban on every matching node in the plan. It still works and will until 2.0, but it widens silently: a query touching one table today carries its exemption onto every table it joins tomorrow, with nothing in the output to say so. Give the entry a condition instead.
+> **Deprecated since 1.3.0: the plan-wide form.** Passing a bare `Operation`, `allowOperations: [Operation.SEQ_SCAN]`, lifts the ban on every matching node in the plan. It still works and will until 2.0, but it widens silently: a query touching one table today carries its exemption onto every table it joins tomorrow, with nothing in the output to say so. Give the entry a condition instead.
 
 ### What it does not check
 

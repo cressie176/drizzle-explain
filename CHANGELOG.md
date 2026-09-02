@@ -34,6 +34,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The rendered estimate is labelled `estimated=` rather than `rows=`. Three row counts now sit on a node line and the old label named neither what it measured nor that it was a prediction, which made `rows=1 actual=1 scanned=20000` hard to read. Every label now states what it is. This changes the text of `analysis.message` only; the `estimatedRows` field is unchanged.
 - MariaDB plan nodes no longer concatenate the table name into `type`. A full scan of `widgets` had `type` of `ALL widgets`, where the README defines `type` as the database's own node label; it is now `ALL`, with the name in `relation`. Rendered output changes from `ALL widgets` to `ALL on widgets`, matching PostgreSQL.
 
+### Deprecated
+
+- Passing a bare `Operation` in `allowOperations`, which lifts the ban across the whole plan. It still works and will until 2.0. It is deprecated because it widens silently: a query touching one table today carries its exemption onto every table it joins tomorrow, with nothing in the output to say so. Give every entry at least one condition, `relation`, `maxScanned` or `maxActualRows`, so it states which nodes it covers. An object entry naming an operation but no condition is rejected outright rather than treated as the plan-wide form.
+
 ## [1.2.0] - 2026-09-02
 
 ### Added
@@ -52,7 +56,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Deprecated
 
-- Passing a bare `Operation` in `allowOperations`, which lifts the ban across the whole plan. It still works and will until 2.0. It is deprecated because it widens silently: a query touching one table today carries its exemption onto every table it joins tomorrow, with nothing in the output to say so. Give every entry at least one condition, `relation`, `maxScanned` or `maxActualRows`, so it states which nodes it covers. An object entry naming an operation but no condition is rejected outright rather than treated as the plan-wide form.
 - Passing limits directly as the second argument, `explain(fn, { maxCost: 200 })` and `explain(fn, [{ ... }, { ... }])`. Both still work, still enforce the same statement counts, and still return what they always did, so no change is required now. Move them under `limits` and give the array form an explicit `statements` count. They will be removed in 2.0.
 
 ## [1.1.3] - 2026-09-01

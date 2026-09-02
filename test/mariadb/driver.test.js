@@ -497,6 +497,23 @@ describe('mariadbDriver', () => {
     });
   });
 
+  describe('repeated executions', () => {
+    test('counts the rows a repeatedly-executed scan read across every execution', async () => {
+      const driver = mariadbDriver(client);
+
+      const [statement] = await driver.explain((db) =>
+        db
+          .select({ id: widgets.id, n: sql`(SELECT COUNT(*) FROM widgets w2 WHERE w2.quantity > widgets.quantity)` })
+          .from(widgets),
+      );
+
+      const [inner] = flatten(statement.root).filter((node) => node.relation === 'w2');
+      equal(inner.loops, 3);
+      equal(inner.scanned, 9);
+      equal(inner.actualRows, 1);
+    });
+  });
+
   test('returns one statement per executed query', async () => {
     const driver = mariadbDriver(client);
     const statements = await driver.explain((db) => db.select().from(widgets));
