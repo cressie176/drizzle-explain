@@ -13,9 +13,12 @@ export enum Operation {
 export interface PlanNode {
   type: string;
   operation?: Operation;
+  relation?: string;
+  alias?: string;
   cost?: number;
   estimatedRows?: number;
   actualRows?: number;
+  scanned?: number;
   actualTimeMs?: number;
   children: PlanNode[];
 }

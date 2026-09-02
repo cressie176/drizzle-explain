@@ -1,6 +1,7 @@
 const { equal, deepEqual: deq, ok, rejects } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
-const { eq, TransactionRollbackError } = require('drizzle-orm');
+const { alias } = require('drizzle-orm/pg-core');
+const { count, eq, TransactionRollbackError } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
 const { postgresDriver } = require('../../postgres');
 const { Operation } = require('../../lib/operation');
@@ -308,6 +309,57 @@ describe('postgresDriver', () => {
 
       const { rows } = await pool.query('SELECT id FROM widgets WHERE id = 207');
       deq(rows, []);
+    });
+  });
+
+  describe('scanned relations', () => {
+    test('names the table an access node scans', async () => {
+      const driver = postgresDriver(pool);
+
+      const [statement] = await driver.explain((db) => db.select().from(widgets));
+
+      equal(statement.root.relation, 'widgets');
+      equal(statement.root.alias, undefined);
+    });
+
+    test('reports the alias alongside the table when the query aliases it', async () => {
+      const driver = postgresDriver(pool);
+      const aliased = alias(widgets, 'w');
+
+      const [statement] = await driver.explain((db) => db.select().from(aliased));
+
+      equal(statement.root.relation, 'widgets');
+      equal(statement.root.alias, 'w');
+    });
+
+    test('reports rows scanned before filtering, not rows returned', async () => {
+      const driver = postgresDriver(pool);
+      let returned;
+
+      const [statement] = await driver.explain(async (db) => {
+        returned = await db.select().from(widgets).where(eq(widgets.id, 2));
+      });
+
+      equal(returned.length, 1);
+      equal(statement.root.actualRows, 1);
+      equal(statement.root.scanned, 3);
+    });
+
+    test('scanned equals actual rows where nothing is filtered out', async () => {
+      const driver = postgresDriver(pool);
+
+      const [statement] = await driver.explain((db) => db.select().from(widgets));
+
+      equal(statement.root.scanned, statement.root.actualRows);
+    });
+
+    test('leaves a node that scans no relation without one', async () => {
+      const driver = postgresDriver(pool);
+
+      const [statement] = await driver.explain((db) => db.select({ total: count() }).from(widgets));
+
+      equal(statement.root.relation, undefined);
+      equal(statement.root.scanned, undefined);
     });
   });
 

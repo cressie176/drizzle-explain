@@ -433,15 +433,30 @@ A driver's only job is to run the right `EXPLAIN`, execute the statement, and tr
 interface PlanNode {
   type: string;              // vendor label, e.g. "Seq Scan", "Nested Loop"
   operation?: Operation;     // normalized category for disallowOperations
+  relation?: string;         // table the node reads, where it reads one
+  alias?: string;            // the query's alias for it, where it differs
   cost?: number;             // optimizer's estimated cost
   estimatedRows?: number;    // optimizer's estimated row count
   actualRows?: number;       // rows the node actually produced
+  scanned?: number;          // rows it read to produce them, before filtering
   actualTimeMs?: number;     // reported, never asserted
   children: PlanNode[];
 }
 ```
 
-The core walks that normalized tree and never sees a vendor-specific plan key, so support for a new database is a new driver, not a change to the engine. `type` keeps the database's own label for rendering; `operation` is the driver's mapping of that node onto the normalized [`Operation`](#disallowoperations) category the `disallowOperations` check tests against (left unset where the driver can't classify it). The raw, untranslated plan is preserved in `analysis.plan` because that's the format you already know how to read.
+The core walks that normalized tree and never sees a vendor-specific plan key, so support for a new database is a new driver, not a change to the engine.
+
+`relation` and `scanned` are what make a failure legible. Without them a plan joining two tables reports two identical `Seq Scan` lines, and the metrics actively mislead, because `estimatedRows` and `actualRows` are both counts of rows *produced*, after filtering. A scan that reads 20,000 rows to return one shows `rows=1 actual=1`, which looks smaller than the harmless 40-row lookup table beside it. `scanned` is the count *before* filtering, so the waste a scan does is `scanned` minus `actualRows`, and `scanned` equal to `actualRows` is the signature of a scan throwing nothing away:
+
+```
+✘ disallowed operation: Seq Scan on books
+
+Nested Loop  (cost=360.9 rows=1 actual=1 time=0.668ms)
+  Seq Scan on books  (cost=359 rows=1 actual=1 scanned=20000 time=0.663ms)  ✘ Seq Scan not allowed
+  Seq Scan on authors  (cost=1.4 rows=40 actual=40 scanned=40 time=0.002ms)
+```
+
+Both are supplied only where the database reports them. PostgreSQL gives the table and its alias separately, so an aliased scan renders as `Seq Scan on books b`; MariaDB reports only the alias once a query uses one, so `relation` carries whichever name it gave and `alias` stays unset. `type` keeps the database's own label for rendering; `operation` is the driver's mapping of that node onto the normalized [`Operation`](#disallowoperations) category the `disallowOperations` check tests against (left unset where the driver can't classify it). The raw, untranslated plan is preserved in `analysis.plan` because that's the format you already know how to read.
 
 ### Transparent execution
 

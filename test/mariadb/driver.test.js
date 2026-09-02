@@ -43,7 +43,7 @@ describe('mariadbDriver', () => {
     const driver = mariadbDriver(client);
     const [statement] = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.quantity, 20)));
 
-    const accessNodes = flatten(statement.root).filter((node) => node.type.includes('widgets'));
+    const accessNodes = flatten(statement.root).filter((node) => node.relation === 'widgets');
     ok(accessNodes.length > 0);
     for (const node of accessNodes) {
       equal(typeof node.estimatedRows, 'number');
@@ -309,6 +309,47 @@ describe('mariadbDriver', () => {
 
       const [rows] = await client.query('SELECT COUNT(*) AS total FROM widgets WHERE id = 207');
       equal(Number(rows[0].total), 0);
+    });
+  });
+
+  describe('scanned relations', () => {
+    test('names the table on an access node and leaves type as the bare access type', async () => {
+      const driver = mariadbDriver(client);
+      const [statement] = await driver.explain((db) => db.select().from(widgets));
+
+      const [access] = flatten(statement.root).filter((node) => node.relation);
+      equal(access.relation, 'widgets');
+      equal(access.type, 'ALL');
+    });
+
+    test('reports the alias in place of the table name, which is all MariaDB gives', async () => {
+      const driver = mariadbDriver(client);
+      const [statement] = await driver.explain((db) => db.select().from(widgets).where(eq(widgets.id, 1)));
+
+      const [access] = flatten(statement.root).filter((node) => node.relation);
+      ok(access.relation);
+      equal(access.alias, undefined);
+    });
+
+    test('reports rows scanned before filtering, not rows returned', async () => {
+      const driver = mariadbDriver(client);
+      let returned;
+
+      const [statement] = await driver.explain(async (db) => {
+        returned = await db.select().from(widgets).where(eq(widgets.quantity, 20));
+      });
+
+      const [access] = flatten(statement.root).filter((node) => node.relation);
+      equal(returned.length, 1);
+      equal(access.scanned, 3);
+    });
+
+    test('leaves the query block with no relation of its own', async () => {
+      const driver = mariadbDriver(client);
+      const [statement] = await driver.explain((db) => db.select().from(widgets));
+
+      equal(statement.root.relation, undefined);
+      equal(statement.root.scanned, undefined);
     });
   });
 

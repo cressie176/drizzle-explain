@@ -4,6 +4,16 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - Unreleased
+
+### Added
+
+- `PlanNode` carries `relation`, `alias` and `scanned` where the database reports them, and the failure message renders all three. A plan joining two tables previously reported two identical `Seq Scan` lines with nothing to tell them apart, and its metrics misled: `estimatedRows` and `actualRows` both count rows *produced*, so a scan reading 20,000 rows to return one showed `rows=1 actual=1` and looked smaller than the 40-row lookup table beside it. Lines now read `Seq Scan on books  (cost=359 rows=1 actual=1 scanned=20000 time=0.663ms)`, and the summary names the table too. Waste is `scanned` minus `actualRows`; equal values mean the scan threw nothing away. PostgreSQL reports the table and alias separately, so an aliased scan renders as `Seq Scan on books b`; MariaDB reports only the alias once a query uses one, so `relation` carries whichever name it gave.
+
+### Changed
+
+- MariaDB plan nodes no longer concatenate the table name into `type`. A full scan of `widgets` had `type` of `ALL widgets`, where the README defines `type` as the database's own node label; it is now `ALL`, with the name in `relation`. Rendered output changes from `ALL widgets` to `ALL on widgets`, matching PostgreSQL.
+
 ## [1.2.0] - 2026-09-02
 
 ### Added

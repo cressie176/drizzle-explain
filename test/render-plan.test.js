@@ -152,6 +152,62 @@ describe('renderPlan', () => {
     eq(lines[1], '');
   });
 
+  describe('scanned relations', () => {
+    test('names the table on the node line', () => {
+      const root = { type: 'Seq Scan', relation: 'widgets', cost: 5, estimatedRows: 10, actualRows: 10, children: [] };
+      const analysis = { passed: false, breaches: [{ node: root, limit: 'maxCost', threshold: 1, observed: 5 }] };
+
+      match(render(root, analysis), /^Seq Scan on widgets {2}\(cost=5/m);
+    });
+
+    test('names the alias alongside the table when they differ', () => {
+      const root = { type: 'Seq Scan', relation: 'widgets', alias: 'w', cost: 5, children: [] };
+      const analysis = { passed: false, breaches: [{ node: root, limit: 'maxCost', threshold: 1, observed: 5 }] };
+
+      match(render(root, analysis), /^Seq Scan on widgets w {2}\(cost=5/m);
+    });
+
+    test('names the table in the disallowed-operation summary', () => {
+      const root = { type: 'Seq Scan', relation: 'widgets', operation: 'SEQ_SCAN', children: [] };
+      const analysis = {
+        passed: false,
+        breaches: [{ node: root, limit: 'disallowOperations', threshold: ['SEQ_SCAN'], observed: 'SEQ_SCAN' }],
+      };
+
+      match(render(root, analysis), /✘ disallowed operation: Seq Scan on widgets/);
+    });
+
+    test('renders a node that scans no relation exactly as before', () => {
+      const root = { type: 'Hash Join', cost: 5, estimatedRows: 10, actualRows: 10, children: [] };
+      const analysis = { passed: false, breaches: [{ node: root, limit: 'maxCost', threshold: 1, observed: 5 }] };
+
+      match(render(root, analysis), /^Hash Join {2}\(cost=5 rows=10 actual=10\)/m);
+    });
+
+    test('renders rows scanned between actual rows and time', () => {
+      const root = {
+        type: 'Seq Scan',
+        relation: 'widgets',
+        cost: 5,
+        estimatedRows: 1,
+        actualRows: 1,
+        scanned: 20000,
+        actualTimeMs: 3,
+        children: [],
+      };
+      const analysis = { passed: false, breaches: [{ node: root, limit: 'maxCost', threshold: 1, observed: 5 }] };
+
+      match(render(root, analysis), /\(cost=5 rows=1 actual=1 scanned=20000 time=3ms\)/);
+    });
+
+    test('omits rows scanned when the driver did not report it', () => {
+      const root = { type: 'Seq Scan', relation: 'widgets', cost: 5, actualRows: 1, children: [] };
+      const analysis = { passed: false, breaches: [{ node: root, limit: 'maxCost', threshold: 1, observed: 5 }] };
+
+      doesNotMatch(render(root, analysis), /scanned=/);
+    });
+  });
+
   describe('colour', () => {
     const colourVars = ['CI', 'FORCE_COLOR', 'NO_COLOR'];
     const originalEnv = Object.fromEntries(colourVars.map((name) => [name, process.env[name]]));
