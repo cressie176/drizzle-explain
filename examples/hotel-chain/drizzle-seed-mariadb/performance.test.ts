@@ -85,7 +85,7 @@ describe('query performance', () => {
 });
 
 async function runCase(testCase: RunCase) {
-  const analysis = await explain((db) => testCase.run(db as Db), testCase.limits);
+  const analysis = await explain((db) => testCase.run(db as Db), { statements: 1, limits: testCase.limits });
   if (testCase.expectBreach) return assertBreached(analysis);
   return assertWithinLimits(analysis);
 }

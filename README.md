@@ -138,6 +138,13 @@ interface Analysis {
   };
   plan: object;      // the raw, unmodified EXPLAIN output from the database
 }
+
+interface OperationExemption {
+  operation: Operation;   // the ban being lifted
+  relation?: string;      // only on nodes reading this table
+  maxScanned?: number;    // only on nodes reading at most this many rows
+  maxActualRows?: number; // only on nodes producing at most this many rows
+}
 ```
 
 `explain` never throws on a failing plan and never asserts; it reports. You assert, with the test framework and style you prefer:
@@ -179,7 +186,7 @@ const analysis = await explain((db) => findRoomAvailability(db, 42), {
     { maxCost: 100 }, // the lookup in the private helper
     {
       maxCost: 500, // the availability query itself
-      allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'grades', maxScanned: 500 }],
+      allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'rooms', maxScanned: 500 }],
     },
   ],
 });
@@ -215,7 +222,7 @@ Statements that passed are left out of the message entirely.
 
 A statement that fails is reported however the failure reaches you. If the error escapes your callback, `explain` rejects with it. If your callback **catches** it and carries on, as an upsert-with-fallback or a deliberately abandoned transaction does, the run continues and the statements that did complete are analysed normally: the failure was yours to handle and you handled it. What `explain` will not do is let a failure disappear, so a statement that fails *after* your callback has returned, most often the loser of a `Promise.race`, still rejects the run, because nothing in your code was ever in a position to see it.
 
-Concurrent issuance is safe: the driver serializes statements, so a callback that fires independent queries with `Promise.all` can be tested unmodified. Statements pair with limits in the order they begin executing, which for `Promise.all([...])` is the array order in practice; sequential awaits remain the clearest style because they make that order obvious. If a pairing ever surprises you, the failure message prints each statement's SQL and parameters, so the mismatch is visible rather than silent. A statement started but not awaited, such as the loser of a `Promise.race`, still executes, is still measured, and still counts towards `statements`: production ran it too, and the race only ignored its result.
+Concurrent issuance is safe: the driver serializes statements, so a callback that fires independent queries with `Promise.all` can be tested unmodified. Statements pair with limits in the order they begin executing, which for `Promise.all([...])` is the array order in practice; sequential awaits remain the clearest style because they make that order obvious. If a pairing ever surprises you, the failure message prints each statement's SQL and parameters, so the mismatch is visible rather than silent. A statement started but not awaited, such as the loser of a `Promise.race`, still executes, is still measured, and still counts towards `statements`: production ran it too, and the race only ignored its result. One that *fails* is never measured and so never counted, which is why a changed count is itself a signal.
 
 ## What it checks
 
@@ -237,7 +244,7 @@ This matters more than it first appears. The optimizer chooses a plan based on h
 
 Using a *ratio* rather than absolute counts means proportional data growth doesn't cause churn: as your data grows, estimate and actual scale together and the ratio holds steady. It only moves when the data changes *shape*, which is precisely when plans are at risk of flipping.
 
-When a node returns zero rows, the ratio is clamped (a divide-by-zero or "infinitely wrong" estimate isn't a useful signal), so an empty result never fails the check on its own.
+A node that produced or estimated zero rows is left out of the comparison entirely, rather than being scored as infinitely wrong, so an empty result never fails the check on its own. The ratio of the nodes that are compared is rounded to a whole number before it is reported.
 
 ### disallowOperations
 
@@ -293,7 +300,7 @@ Every such override is a place where someone looked at a plan and consciously ac
 
 #### Scoping an exemption to part of the plan
 
-Naming a bare operation lifts the ban across the whole plan, which is too blunt when a query touches tables of different sizes. A sequential scan is optimal on a 40-row lookup table and a defect on a 20,000-row one, and a join of the two would have to accept or reject both together. An entry can instead carry conditions, and exempts only the nodes that satisfy every one of them:
+Naming a bare operation lifts the ban across the whole plan, which is too blunt when a query touches tables of different sizes. A sequential scan is optimal on a 40-row lookup table and a defect on a 20,000-row one, and a join of the two would have to accept or reject both together. An entry carries conditions instead, and exempts only the nodes that satisfy every one of them:
 
 ```ts
 const explain = createExplain(postgresDriver(pool), {
@@ -335,7 +342,7 @@ allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'countries', maxSca
 
 On MariaDB, `relation` carries the alias where a query aliases the table, since MariaDB reports only the one name. Drizzle does not alias plain selects but does alias relational queries and self-joins.
 
-Three details worth knowing:
+Four details worth knowing:
 
 - A node the driver reported no count for is never exempted by a condition testing that count. The exemption fails closed, because a driver that cannot supply the signal must not silently exempt everything.
 - Every entry must name an operation **and** at least one condition. A bare `{ maxScanned: 500 }` would lift every ban at once, and `{ operation: Operation.SEQ_SCAN }` would lift one ban across the whole plan; both are rejected rather than interpreted.
@@ -560,9 +567,10 @@ ROLLBACK TO SAVEPOINT drizzle_explain_tx_1 -- callback threw
 
 The semantics you get are the ones you wrote. `tx.rollback()` throws `TransactionRollbackError` and undoes the transaction's writes, and any other error does the same before propagating, so the state the rest of your callback sees is the state production would present. Nested transactions take a savepoint of their own, so rolling an inner one back leaves the enclosing one's writes in place. Nothing commits either way: the outer rollback discards the lot when the run finishes.
 
-Three limits are worth knowing:
+A transaction you abandon is yours to handle: catch the rejection and the run carries on, with the statements that did complete analysed normally, whether the failure came from `tx.rollback()`, from an error your callback threw, or from a statement of its own such as a duplicate key.
 
-- Carrying on after a *failed* transaction only works when your own code raised the failure. A transaction abandoned with `tx.rollback()`, or by an error your callback threw, can be caught and the run continues normally. Where the failure came from a statement itself, a duplicate key say, the transaction still rolls back correctly and the following statements still run, but the run is rejected with that error when it finishes even though you caught it. See [issue 19](https://github.com/cressie176/drizzle-explain/issues/19).
+Two limits are worth knowing:
+
 - The transaction config (isolation level, `readOnly`) is accepted and ignored. There is only one real transaction, opened by the driver, and its isolation is the connection's.
 - Concurrent top-level transactions cannot be isolated from each other. Everything in a run shares one connection, so two transactions started under `Promise.all` interleave on that connection rather than running independently as they would against a pool.
 
@@ -573,9 +581,9 @@ Three limits are worth knowing:
 | Import                 | drizzle-explain/postgres   | drizzle-explain/mariadb   |
 | rowEstimateTolerance   | ✓                          | ✓                         |
 | maxCost                | ✓                          | ✓                         |
-| disallowOperations     | ✓                          | ✓                         |
+| disallowOperations     | ✓                          | scan categories only      |
 
-Both databases expose the signals `drizzle-explain` needs. PostgreSQL's `EXPLAIN (ANALYZE, FORMAT JSON)` and MariaDB's `ANALYZE FORMAT=JSON` each report estimated rows, actual rows, and a plan cost. MariaDB carries a per-node `cost` on the query block and its access nodes (verified against MariaDB 11.8), so `maxCost` is enforced on both. A trivial `const` primary-key lookup is the one case where MariaDB omits a cost; there the analyser simply skips `maxCost` rather than failing.
+Both databases expose the signals `drizzle-explain` needs, though MariaDB classifies only the two scan categories (see the [operation table](#disallowoperations)), so banning a join or sort operation never matches there. PostgreSQL's `EXPLAIN (ANALYZE, FORMAT JSON)` and MariaDB's `ANALYZE FORMAT=JSON` each report estimated rows, actual rows, and a plan cost. MariaDB carries a per-node `cost` on the query block and its access nodes (verified against MariaDB 11.8), so `maxCost` is enforced on both. A trivial `const` primary-key lookup is the one case where MariaDB omits a cost; there the analyser simply skips `maxCost` rather than failing.
 
 ### Why not SQLite
 

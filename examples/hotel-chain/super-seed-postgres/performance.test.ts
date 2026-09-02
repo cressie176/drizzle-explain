@@ -55,12 +55,12 @@ describe('query performance', () => {
           continue;
         }
         if ('breaches' in c) {
-          const analysis = await explain(c.breaches, c.limits);
+          const analysis = await explain(c.breaches, { statements: 1, limits: c.limits });
           assert.equal(analysis.passed, false, 'expected this query to breach its limit');
           assert.notEqual(analysis.message, '');
           continue;
         }
-        const analysis = await explain(c.run, c.limits);
+        const analysis = await explain(c.run, { statements: 1, limits: c.limits });
         assert.ok(analysis.passed, analysis.message);
       }
     });
