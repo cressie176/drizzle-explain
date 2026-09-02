@@ -481,10 +481,11 @@ RELEASE SAVEPOINT drizzle_explain_tx_1     -- callback returned
 ROLLBACK TO SAVEPOINT drizzle_explain_tx_1 -- callback threw
 ```
 
-The semantics you get are the ones you wrote. `tx.rollback()` throws `TransactionRollbackError` and undoes the transaction's writes, and any other error does the same before propagating, so a callback that catches a failed transaction and carries on sees the state it would see in production. Nested transactions take a savepoint of their own, so rolling an inner one back leaves the enclosing one's writes in place. Nothing commits either way: the outer rollback discards the lot when the run finishes.
+The semantics you get are the ones you wrote. `tx.rollback()` throws `TransactionRollbackError` and undoes the transaction's writes, and any other error does the same before propagating, so the state the rest of your callback sees is the state production would present. Nested transactions take a savepoint of their own, so rolling an inner one back leaves the enclosing one's writes in place. Nothing commits either way: the outer rollback discards the lot when the run finishes.
 
-Two limits are worth knowing:
+Three limits are worth knowing:
 
+- Carrying on after a *failed* transaction only works when your own code raised the failure. A transaction abandoned with `tx.rollback()`, or by an error your callback threw, can be caught and the run continues normally. Where the failure came from a statement itself, a duplicate key say, the transaction still rolls back correctly and the following statements still run, but the run is rejected with that error when it finishes even though you caught it. See [issue 19](https://github.com/cressie176/drizzle-explain/issues/19).
 - The transaction config (isolation level, `readOnly`) is accepted and ignored. There is only one real transaction, opened by the driver, and its isolation is the connection's.
 - Concurrent top-level transactions cannot be isolated from each other. Everything in a run shares one connection, so two transactions started under `Promise.all` interleave on that connection rather than running independently as they would against a pool.
 
