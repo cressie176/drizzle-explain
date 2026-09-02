@@ -1,7 +1,7 @@
 const { deepEqual: deq, equal, ok, rejects } = require('node:assert/strict');
 const { before, after, describe, test } = require('node:test');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
-const { eq } = require('drizzle-orm');
+const { eq, TransactionRollbackError } = require('drizzle-orm');
 const { mariadbDriver } = require('../../mariadb');
 const { Operation } = require('../../lib/operation');
 const { connect } = require('./connect');
@@ -208,6 +208,107 @@ describe('mariadbDriver', () => {
         ),
         /missing_table/,
       );
+    });
+  });
+
+  describe('transactions', () => {
+    test('explains every statement issued inside a transaction callback', async () => {
+      const driver = mariadbDriver(client);
+
+      const statements = await driver.explain((db) =>
+        db.transaction(async (tx) => {
+          await tx.insert(widgets).values({ id: 200, name: 'first', quantity: 1 });
+          await tx.insert(widgets).values({ id: 201, name: 'second', quantity: 2 });
+        }),
+      );
+
+      equal(statements.length, 2);
+    });
+
+    test('returns the transaction callback result and applies its writes for later statements', async () => {
+      const driver = mariadbDriver(client);
+      let returned;
+      let observed;
+
+      await driver.explain(async (db) => {
+        returned = await db.transaction(async (tx) => {
+          await tx.insert(widgets).values({ id: 202, name: 'kept', quantity: 3 });
+          return 'committed';
+        });
+        observed = await db.select({ id: widgets.id, name: widgets.name }).from(widgets).where(eq(widgets.id, 202));
+      });
+
+      equal(returned, 'committed');
+      deq(observed, [{ id: 202, name: 'kept' }]);
+    });
+
+    test('rolling back a transaction undoes its writes and rejects with TransactionRollbackError', async () => {
+      const driver = mariadbDriver(client);
+      let observed;
+
+      await driver.explain(async (db) => {
+        await rejects(
+          db.transaction(async (tx) => {
+            await tx.insert(widgets).values({ id: 203, name: 'abandoned', quantity: 4 });
+            await tx.rollback();
+          }),
+          TransactionRollbackError,
+        );
+        observed = await db.select({ id: widgets.id }).from(widgets).where(eq(widgets.id, 203));
+      });
+
+      deq(observed, []);
+    });
+
+    test('an error thrown inside a transaction undoes its writes and propagates', async () => {
+      const driver = mariadbDriver(client);
+      const boom = new Error('boom');
+      let observed;
+
+      await driver.explain(async (db) => {
+        await rejects(
+          db.transaction(async (tx) => {
+            await tx.insert(widgets).values({ id: 204, name: 'doomed', quantity: 5 });
+            throw boom;
+          }),
+          boom,
+        );
+        observed = await db.select({ id: widgets.id }).from(widgets).where(eq(widgets.id, 204));
+      });
+
+      deq(observed, []);
+    });
+
+    test('rolling back a nested transaction keeps the writes of the enclosing one', async () => {
+      const driver = mariadbDriver(client);
+      let observed;
+
+      await driver.explain(async (db) => {
+        await db.transaction(async (tx) => {
+          await tx.insert(widgets).values({ id: 205, name: 'outer', quantity: 6 });
+          await rejects(
+            tx.transaction(async (inner) => {
+              await inner.insert(widgets).values({ id: 206, name: 'inner', quantity: 7 });
+              await inner.rollback();
+            }),
+            TransactionRollbackError,
+          );
+        });
+        observed = await db.select({ id: widgets.id }).from(widgets).where(eq(widgets.name, 'outer'));
+      });
+
+      deq(observed, [{ id: 205 }]);
+    });
+
+    test('leaves the database unchanged after a committed transaction', async () => {
+      const driver = mariadbDriver(client);
+
+      await driver.explain((db) =>
+        db.transaction((tx) => tx.insert(widgets).values({ id: 207, name: 'ephemeral', quantity: 8 })),
+      );
+
+      const [rows] = await client.query('SELECT COUNT(*) AS total FROM widgets WHERE id = 207');
+      equal(Number(rows[0].total), 0);
     });
   });
 

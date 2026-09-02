@@ -1,6 +1,6 @@
 const { equal, deepEqual: deq, ok, rejects } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
-const { eq } = require('drizzle-orm');
+const { eq, TransactionRollbackError } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
 const { postgresDriver } = require('../../postgres');
 const { Operation } = require('../../lib/operation');
@@ -212,6 +212,102 @@ describe('postgresDriver', () => {
     test('never overlaps queries on the connection', () => {
       const overlaps = warnings.filter((warning) => /already executing/.test(warning.message));
       deq(overlaps, []);
+    });
+  });
+
+  describe('transactions', () => {
+    test('explains every statement issued inside a transaction callback', async () => {
+      const driver = postgresDriver(pool);
+
+      const statements = await driver.explain((db) =>
+        db.transaction(async (tx) => {
+          await tx.insert(widgets).values({ id: 200, name: 'first' });
+          await tx.insert(widgets).values({ id: 201, name: 'second' });
+        }),
+      );
+
+      equal(statements.length, 2);
+    });
+
+    test('returns the transaction callback result and applies its writes for later statements', async () => {
+      const driver = postgresDriver(pool);
+      let returned;
+      let observed;
+
+      await driver.explain(async (db) => {
+        returned = await db.transaction((tx) => tx.insert(widgets).values({ id: 202, name: 'kept' }).returning());
+        observed = await db.select().from(widgets).where(eq(widgets.id, 202));
+      });
+
+      deq(returned, [{ id: 202, name: 'kept' }]);
+      deq(observed, [{ id: 202, name: 'kept' }]);
+    });
+
+    test('rolling back a transaction undoes its writes and rejects with TransactionRollbackError', async () => {
+      const driver = postgresDriver(pool);
+      let observed;
+
+      await driver.explain(async (db) => {
+        await rejects(
+          db.transaction(async (tx) => {
+            await tx.insert(widgets).values({ id: 203, name: 'abandoned' });
+            await tx.rollback();
+          }),
+          TransactionRollbackError,
+        );
+        observed = await db.select().from(widgets).where(eq(widgets.id, 203));
+      });
+
+      deq(observed, []);
+    });
+
+    test('an error thrown inside a transaction undoes its writes and propagates', async () => {
+      const driver = postgresDriver(pool);
+      const boom = new Error('boom');
+      let observed;
+
+      await driver.explain(async (db) => {
+        await rejects(
+          db.transaction(async (tx) => {
+            await tx.insert(widgets).values({ id: 204, name: 'doomed' });
+            throw boom;
+          }),
+          boom,
+        );
+        observed = await db.select().from(widgets).where(eq(widgets.id, 204));
+      });
+
+      deq(observed, []);
+    });
+
+    test('rolling back a nested transaction keeps the writes of the enclosing one', async () => {
+      const driver = postgresDriver(pool);
+      let observed;
+
+      await driver.explain(async (db) => {
+        await db.transaction(async (tx) => {
+          await tx.insert(widgets).values({ id: 205, name: 'outer' });
+          await rejects(
+            tx.transaction(async (inner) => {
+              await inner.insert(widgets).values({ id: 206, name: 'inner' });
+              await inner.rollback();
+            }),
+            TransactionRollbackError,
+          );
+        });
+        observed = await db.select().from(widgets).where(eq(widgets.name, 'outer'));
+      });
+
+      deq(observed, [{ id: 205, name: 'outer' }]);
+    });
+
+    test('leaves the database unchanged after a committed transaction', async () => {
+      const driver = postgresDriver(pool);
+
+      await driver.explain((db) => db.transaction((tx) => tx.insert(widgets).values({ id: 207, name: 'ephemeral' })));
+
+      const { rows } = await pool.query('SELECT id FROM widgets WHERE id = 207');
+      deq(rows, []);
     });
   });
 

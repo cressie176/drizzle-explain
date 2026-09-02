@@ -459,6 +459,35 @@ Statements are serialized within a run: if the callback issues queries concurren
 - Each statement executes twice, so a run takes roughly twice as long as the query itself.
 - Anything not covered by transactional rollback happens twice, most commonly sequence advancement, so an auto-generated id may jump by two per inserted row. Nothing is committed either way.
 
+### Transactions
+
+Query functions that group their writes in a transaction work unchanged:
+
+```ts
+await explain((db) =>
+  db.transaction(async (tx) => {
+    await tx.insert(shoots).values(shoot).returning();
+    await tx.insert(photos).values(rows);
+  }),
+);
+```
+
+Every statement inside the callback is explained exactly as it would be outside one. The instrumented database implements `transaction` with a savepoint rather than `BEGIN`, since the run is already inside a transaction that is always rolled back:
+
+```
+SAVEPOINT drizzle_explain_tx_1
+<statements of the transaction callback, each explained and executed>
+RELEASE SAVEPOINT drizzle_explain_tx_1     -- callback returned
+ROLLBACK TO SAVEPOINT drizzle_explain_tx_1 -- callback threw
+```
+
+The semantics you get are the ones you wrote. `tx.rollback()` throws `TransactionRollbackError` and undoes the transaction's writes, and any other error does the same before propagating, so a callback that catches a failed transaction and carries on sees the state it would see in production. Nested transactions take a savepoint of their own, so rolling an inner one back leaves the enclosing one's writes in place. Nothing commits either way: the outer rollback discards the lot when the run finishes.
+
+Two limits are worth knowing:
+
+- The transaction config (isolation level, `readOnly`) is accepted and ignored. There is only one real transaction, opened by the driver, and its isolation is the connection's.
+- Concurrent top-level transactions cannot be isolated from each other. Everything in a run shares one connection, so two transactions started under `Promise.all` interleave on that connection rather than running independently as they would against a pool.
+
 ### Supported databases
 
 |                        | PostgreSQL                 | MariaDB                   |
