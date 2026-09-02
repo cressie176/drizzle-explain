@@ -47,7 +47,12 @@ describe('postgres plan translator', () => {
     });
 
     test('reports whole rows even where the counts are averages', () => {
-      const node = nodeOf({ 'Relation Name': 'widgets', 'Actual Rows': 1.4, 'Rows Removed by Filter': 5.4, 'Actual Loops': 3 });
+      const node = nodeOf({
+        'Relation Name': 'widgets',
+        'Actual Rows': 1.4,
+        'Rows Removed by Filter': 5.4,
+        'Actual Loops': 3,
+      });
 
       equal(node.scanned, 20);
     });
