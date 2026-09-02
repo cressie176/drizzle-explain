@@ -12,6 +12,12 @@ const widgets = mysqlTable('widgets', {
   quantity: int('quantity'),
 });
 
+const absent = mysqlTable('absent_table', {
+  id: int('id'),
+});
+
+function ignore() {}
+
 const lookups = mysqlTable('lookups', {
   id: int('id'),
   label: varchar('label', { length: 64 }),
@@ -245,6 +251,17 @@ describe('createExplain over the MariaDB driver', () => {
 
       equal(analysis.passed, true, analysis.message);
     });
+  });
+
+  test('analyses the surviving statements when the callback handles a failure', async () => {
+    const explain = createExplain(mariadbDriver(client), { maxCost: 1000000 });
+
+    const analysis = await explain(async (db) => {
+      await db.select().from(absent).catch(ignore);
+      await db.select().from(widgets).where(eq(widgets.id, 1));
+    });
+
+    equal(analysis.passed, true, analysis.message);
   });
 
   test('rolls back a write executed through the query callback', async () => {

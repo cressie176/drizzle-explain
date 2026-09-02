@@ -134,7 +134,7 @@ interface Analysis {
     maxCost?: number;
     rowEstimateTolerance?: number;
     disallowOperations?: Operation[];
-    allowOperations?: Operation[];
+    allowOperations?: (Operation | OperationExemption)[];
   };
   plan: object;      // the raw, unmodified EXPLAIN output from the database
 }
@@ -210,6 +210,8 @@ Seq Scan on rooms  (cost=62431 estimated=10 actual=10 scanned=240000 time=181.4m
 
 Statements that passed are left out of the message entirely.
 
+A statement that fails is reported however the failure reaches you. If the error escapes your callback, `explain` rejects with it. If your callback **catches** it and carries on, as an upsert-with-fallback or a deliberately abandoned transaction does, the run continues and the statements that did complete are analysed normally: the failure was yours to handle and you handled it. What `explain` will not do is let a failure disappear, so a statement that fails *after* your callback has returned, most often the loser of a `Promise.race`, still rejects the run, because nothing in your code was ever in a position to see it.
+
 Concurrent issuance is safe: the driver serializes statements, so a callback that fires independent queries with `Promise.all` can be tested unmodified. Statements pair with limits in the order they begin executing, which for `Promise.all([...])` is the array order in practice; sequential awaits remain the clearest style because they make that order obvious. If a pairing ever surprises you, the failure message prints each statement's SQL and parameters, so the mismatch is visible rather than silent. A statement started but not awaited, such as the loser of a `Promise.race`, still executes, is still measured, and still counts towards `statements`: production ran it too, and the race only ignored its result.
 
 ## What it checks
@@ -264,7 +266,7 @@ Like `maxCost`, this check **defaults to off**: with `disallowOperations` unset,
 
 ### allowOperations
 
-`allowOperations` is the escape hatch for `disallowOperations`. It only ever *removes* an operation from the disallowed set: the effective ban is `disallowOperations` minus `allowOperations`. Because every operation is permitted by default, **setting `allowOperations` on its own (with no `disallowOperations`) does nothing**: there is no ban for it to lift. It is meaningful only as a **per-query override** against a `disallowOperations` default.
+`allowOperations` is the escape hatch for `disallowOperations`. It only ever *lifts* a ban, never adds one: a node breaches when its operation is disallowed and no `allowOperations` entry matches that node. Because every operation is permitted by default, **setting `allowOperations` on its own (with no `disallowOperations`) does nothing**: there is no ban for it to lift. It is meaningful only as a **per-query override** against a `disallowOperations` default.
 
 This solves the awkward case where a global default bans several operations and one query legitimately needs one of them. Without `allowOperations` you'd have to re-declare the whole list minus the one you want; with it you name only the exception:
 

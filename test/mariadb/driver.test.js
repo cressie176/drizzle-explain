@@ -407,6 +407,37 @@ describe('mariadbDriver', () => {
     });
   });
 
+  describe('failures the callback handles', () => {
+    test('a statement error the callback catches leaves the run intact', async () => {
+      const driver = mariadbDriver(client);
+      let caught;
+      let observed;
+
+      const statements = await driver.explain(async (db) => {
+        await db
+          .select()
+          .from(missing)
+          .catch((error) => {
+            caught = error;
+          });
+        observed = await db.select().from(widgets).where(eq(widgets.id, 1));
+      });
+
+      ok(caught);
+      equal(observed.length, 1);
+      equal(statements.length, 1);
+    });
+
+    test('a statement error the callback lets escape still rejects the run', async () => {
+      const driver = mariadbDriver(client);
+
+      await rejects(
+        driver.explain((db) => db.select().from(missing)),
+        /missing_table/,
+      );
+    });
+  });
+
   test('returns one statement per executed query', async () => {
     const driver = mariadbDriver(client);
     const statements = await driver.explain((db) => db.select().from(widgets));

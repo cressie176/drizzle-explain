@@ -7,6 +7,8 @@ const { postgresDriver } = require('../../postgres');
 const { Operation } = require('../../lib/operation');
 const { connect } = require('./connect');
 
+function doNothing() {}
+
 const widgets = pgTable('widgets', {
   id: integer('id'),
   name: text('name'),
@@ -360,6 +362,50 @@ describe('postgresDriver', () => {
 
       equal(statement.root.relation, undefined);
       equal(statement.root.scanned, undefined);
+    });
+  });
+
+  describe('failures the callback handles', () => {
+    test('a statement error the callback catches leaves the run intact', async () => {
+      const driver = postgresDriver(pool);
+      let caught;
+      let observed;
+
+      const statements = await driver.explain(async (db) => {
+        await db
+          .select()
+          .from(missing)
+          .catch((error) => {
+            caught = error;
+          });
+        observed = await db.select().from(widgets).where(eq(widgets.id, 1));
+      });
+
+      ok(caught);
+      equal(observed.length, 1);
+      equal(statements.length, 1);
+    });
+
+    test('a statement error the callback lets escape still rejects the run', async () => {
+      const driver = postgresDriver(pool);
+
+      await rejects(
+        driver.explain((db) => db.select().from(missing)),
+        /missing_table/,
+      );
+    });
+
+    test('a transaction the callback catches leaves the run intact', async () => {
+      const driver = postgresDriver(pool);
+      let observed;
+
+      const statements = await driver.explain(async (db) => {
+        await db.transaction((tx) => tx.select().from(missing)).catch(doNothing);
+        observed = await db.select().from(widgets).where(eq(widgets.id, 1));
+      });
+
+      equal(observed.length, 1);
+      equal(statements.length, 1);
     });
   });
 

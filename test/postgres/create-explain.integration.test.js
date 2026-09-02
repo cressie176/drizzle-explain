@@ -11,6 +11,12 @@ const widgets = pgTable('widgets', {
   name: text('name'),
 });
 
+const absent = pgTable('absent_table', {
+  id: integer('id'),
+});
+
+function ignore() {}
+
 const lookups = pgTable('lookups', {
   id: integer('id'),
   label: text('label'),
@@ -237,6 +243,17 @@ describe('createExplain over the PostgreSQL driver', () => {
 
       equal(analysis.passed, true, analysis.message);
     });
+  });
+
+  test('analyses the surviving statements when the callback handles a failure', async () => {
+    const explain = createExplain(postgresDriver(pool), { maxCost: 1000000 });
+
+    const analysis = await explain(async (db) => {
+      await db.select().from(absent).catch(ignore);
+      await db.select().from(widgets).where(eq(widgets.id, 1));
+    });
+
+    equal(analysis.passed, true, analysis.message);
   });
 
   test('rolls back a write executed through the query callback', async () => {
