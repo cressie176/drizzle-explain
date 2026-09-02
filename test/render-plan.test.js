@@ -25,7 +25,7 @@ describe('renderPlan', () => {
 
     eq(
       message,
-      ['✘ cost 62431 exceeds limit 100', '', 'Seq Scan  (cost=62431 rows=10 actual=10)  ✘ cost 62431 > 100'].join('\n'),
+      ['✘ cost 62431 exceeds limit 100', '', 'Seq Scan  (cost=62431 estimated=10 actual=10)  ✘ cost 62431 > 100'].join('\n'),
     );
   });
 
@@ -40,7 +40,7 @@ describe('renderPlan', () => {
 
     eq(
       message,
-      ['✘ row estimate 340x off, limit 10', '', 'Index Scan  (cost=8 rows=1 actual=340)  ✘ 340x off, limit 10'].join(
+      ['✘ row estimate 340x off, limit 10', '', 'Index Scan  (cost=8 estimated=1 actual=340)  ✘ 340x off, limit 10'].join(
         '\n',
       ),
     );
@@ -57,7 +57,7 @@ describe('renderPlan', () => {
 
     eq(
       message,
-      ['✘ disallowed operation: Seq Scan', '', 'Seq Scan  (cost=62431 rows=10 actual=10)  ✘ Seq Scan not allowed'].join(
+      ['✘ disallowed operation: Seq Scan', '', 'Seq Scan  (cost=62431 estimated=10 actual=10)  ✘ Seq Scan not allowed'].join(
         '\n',
       ),
     );
@@ -91,7 +91,7 @@ describe('renderPlan', () => {
 
     const treeLine = render(root, analysis).split('\n\n')[1];
 
-    eq(treeLine, 'Seq Scan  (cost=62431 rows=1 actual=340)  ✘ cost 62431 > 100  ✘ 340x off, limit 10');
+    eq(treeLine, 'Seq Scan  (cost=62431 estimated=1 actual=340)  ✘ cost 62431 > 100  ✘ 340x off, limit 10');
   });
 
   test('indents children by depth and annotates the deep offending node', () => {
@@ -109,8 +109,8 @@ describe('renderPlan', () => {
       [
         '✘ cost 62431 exceeds limit 100',
         '',
-        'Nested Loop  (cost=62450 rows=10 actual=10)',
-        '  Seq Scan  (cost=62431 rows=10 actual=10)  ✘ cost 62431 > 100',
+        'Nested Loop  (cost=62450 estimated=10 actual=10)',
+        '  Seq Scan  (cost=62431 estimated=10 actual=10)  ✘ cost 62431 > 100',
       ].join('\n'),
     );
   });
@@ -136,7 +136,7 @@ describe('renderPlan', () => {
 
     const treeLine = render(root, analysis).split('\n\n')[1];
 
-    eq(treeLine, 'Seq Scan  (cost=62431 rows=10 actual=10 time=4.2ms)  ✘ cost 62431 > 100');
+    eq(treeLine, 'Seq Scan  (cost=62431 estimated=10 actual=10 time=4.2ms)  ✘ cost 62431 > 100');
   });
 
   test('produces a multi-line message with a blank line between summary and tree', () => {
@@ -181,7 +181,7 @@ describe('renderPlan', () => {
       const root = { type: 'Hash Join', cost: 5, estimatedRows: 10, actualRows: 10, children: [] };
       const analysis = { passed: false, breaches: [{ node: root, limit: 'maxCost', threshold: 1, observed: 5 }] };
 
-      match(render(root, analysis), /^Hash Join {2}\(cost=5 rows=10 actual=10\)/m);
+      match(render(root, analysis), /^Hash Join {2}\(cost=5 estimated=10 actual=10\)/m);
     });
 
     test('renders rows scanned between actual rows and time', () => {
@@ -197,7 +197,7 @@ describe('renderPlan', () => {
       };
       const analysis = { passed: false, breaches: [{ node: root, limit: 'maxCost', threshold: 1, observed: 5 }] };
 
-      match(render(root, analysis), /\(cost=5 rows=1 actual=1 scanned=20000 time=3ms\)/);
+      match(render(root, analysis), /\(cost=5 estimated=1 actual=1 scanned=20000 time=3ms\)/);
     });
 
     test('omits rows scanned when the driver did not report it', () => {

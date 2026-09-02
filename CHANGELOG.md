@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- The rendered estimate is labelled `estimated=` rather than `rows=`. Three row counts now sit on a node line and the old label named neither what it measured nor that it was a prediction, which made `rows=1 actual=1 scanned=20000` hard to read. Every label now states what it is. This changes the text of `analysis.message` only; the `estimatedRows` field is unchanged.
 - MariaDB plan nodes no longer concatenate the table name into `type`. A full scan of `widgets` had `type` of `ALL widgets`, where the README defines `type` as the database's own node label; it is now `ALL`, with the name in `relation`. Rendered output changes from `ALL widgets` to `ALL on widgets`, matching PostgreSQL.
 
 ## [1.2.0] - 2026-09-02

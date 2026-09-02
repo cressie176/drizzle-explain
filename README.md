@@ -151,7 +151,7 @@ assert.ok(analysis.passed, analysis.message);
 ```
 ✘ cost 62431 exceeds limit 100
 
-Seq Scan on reservations  (cost=62431 rows=10 actual=10 scanned=240000 time=181.4ms)  ✘ cost 62431 > 100
+Seq Scan on reservations  (cost=62431 estimated=10 actual=10 scanned=240000 time=181.4ms)  ✘ cost 62431 > 100
 ```
 
 The raw plan is always available in `analysis.plan` if you want to log or inspect the full detail; it is the database's native EXPLAIN output, unmodified.
@@ -205,7 +205,7 @@ statement 2 of 2
 
 ✘ cost 62431 exceeds limit 100
 
-Seq Scan on rooms  (cost=62431 rows=10 actual=10 scanned=240000 time=181.4ms)  ✘ cost 62431 > 100
+Seq Scan on rooms  (cost=62431 estimated=10 actual=10 scanned=240000 time=181.4ms)  ✘ cost 62431 > 100
 ```
 
 Statements that passed are left out of the message entirely.
@@ -445,14 +445,14 @@ interface PlanNode {
 
 The core walks that normalized tree and never sees a vendor-specific plan key, so support for a new database is a new driver, not a change to the engine.
 
-`relation` and `scanned` are what make a failure legible. Without them a plan joining two tables reports two identical `Seq Scan` lines, and the metrics actively mislead, because `estimatedRows` and `actualRows` are both counts of rows *produced*, after filtering. A scan that reads 20,000 rows to return one shows `rows=1 actual=1`, which looks smaller than the harmless 40-row lookup table beside it. `scanned` is the count *before* filtering, so the waste a scan does is `scanned` minus `actualRows`, and `scanned` equal to `actualRows` is the signature of a scan throwing nothing away:
+`relation` and `scanned` are what make a failure legible. Without them a plan joining two tables reports two identical `Seq Scan` lines, and the metrics actively mislead, because `estimatedRows` and `actualRows` are both counts of rows *produced*, after filtering. A scan that reads 20,000 rows to return one shows `estimated=1 actual=1`, which looks smaller than the harmless 40-row lookup table beside it. `scanned` is the count *before* filtering, so the waste a scan does is `scanned` minus `actualRows`, and `scanned` equal to `actualRows` is the signature of a scan throwing nothing away:
 
 ```
 ✘ disallowed operation: Seq Scan on books
 
-Nested Loop  (cost=360.9 rows=1 actual=1 time=0.668ms)
-  Seq Scan on books  (cost=359 rows=1 actual=1 scanned=20000 time=0.663ms)  ✘ Seq Scan not allowed
-  Seq Scan on authors  (cost=1.4 rows=40 actual=40 scanned=40 time=0.002ms)
+Nested Loop  (cost=360.9 estimated=1 actual=1 time=0.668ms)
+  Seq Scan on books  (cost=359 estimated=1 actual=1 scanned=20000 time=0.663ms)  ✘ Seq Scan not allowed
+  Seq Scan on authors  (cost=1.4 estimated=40 actual=40 scanned=40 time=0.002ms)
 ```
 
 Both are supplied only where the database reports them. PostgreSQL gives the table and its alias separately, so an aliased scan renders as `Seq Scan on books b`; MariaDB reports only the alias once a query uses one, so `relation` carries whichever name it gave and `alias` stays unset. `type` keeps the database's own label for rendering; `operation` is the driver's mapping of that node onto the normalized [`Operation`](#disallowoperations) category the `disallowOperations` check tests against (left unset where the driver can't classify it). The raw, untranslated plan is preserved in `analysis.plan` because that's the format you already know how to read.
