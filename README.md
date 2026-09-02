@@ -109,16 +109,22 @@ Creates an `explain` function bound to a driver and a set of default limits.
 - **driver**: a database-specific driver (see [Drivers](#drivers)), e.g. `postgresDriver(pool)`.
 - **defaults**: `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, applied to every query unless overridden per call. `drizzle-explain` ships no built-in defaults; you decide what "acceptable" means for your application (see [Choosing limits](#choosing-limits)).
 
-### explain(fn, overrides?)
+### explain(fn, options?)
 
 Runs the query returned by `fn` through `EXPLAIN ANALYZE` and returns an analysis.
 
 - **fn**: `(db) => query`. Receives an instrumented Drizzle database and returns a single Drizzle query, or, when checking several statements, issues them sequentially or concurrently (see [Multiple statements](#multiple-statements)).
-- **overrides**: `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, merged over the defaults for this call only; or an array of those, one per statement, to check a callback that issues several (see [Multiple statements](#multiple-statements)). To permit an operation your default bans for one specific query, pass `{ allowOperations: [Operation.SEQ_SCAN] }`; it lifts *only* that operation's ban for that call and leaves the rest of the default `disallowOperations` list intact (see [disallowOperations](#disallowoperations)).
+- **options**: `{ statements?, limits? }`.
+  - **statements**: how many statements `fn` is expected to execute. A positive integer, defaulting to 1 or, when `limits` is an array, to that array's length.
+  - **limits**: `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, merged over the defaults for this call only; or an array of those, one per statement. To permit an operation your default bans for one specific query, pass `{ allowOperations: [Operation.SEQ_SCAN] }`; it lifts *only* that operation's ban for that call and leaves the rest of the default `disallowOperations` list intact (see [disallowOperations](#disallowoperations)).
 
-Exactly one statement must be executed per call. If `fn` runs zero or more than one statement, `explain` throws: a single query is the unit of measurement. To check a function that legitimately issues several, pass an array of limits (see [Multiple statements](#multiple-statements)).
+Called with no options at all, `explain` expects exactly one statement. If `fn` runs zero or more than one, it throws: a single query is the unit of measurement. To check a function that legitimately issues several, say how many with `statements` (see [Multiple statements](#multiple-statements)).
 
-Returns:
+> **Deprecated since 1.2.0.** Earlier releases took the limits themselves as the second argument: `explain(fn, { maxCost: 200 })` for one statement and `explain(fn, [{ ... }, { ... }])` for several. Both still work and still return what they always did, so nothing needs changing today, but they will be removed in 2.0. Move them under `limits`, and give the array form an explicit `statements` count while you are there.
+
+Omitting `limits` checks every statement against the defaults. Supplying both `statements` and an array of `limits` states the same count twice, which is allowed as long as they agree; if they disagree, or if one set of limits is offered for more than one statement, `explain` throws before running anything, because the mistake is in the test rather than in the code under test.
+
+Called with no options, or with the deprecated bare limits, returns:
 
 ```ts
 interface Analysis {
@@ -151,26 +157,37 @@ Seq Scan on reservations  (cost=0..62431 rows=10 actual=10)  ✘ cost 62431 > 10
 
 The raw plan is always available in `analysis.plan` if you want to log or inspect the full detail; it is the database's native EXPLAIN output, unmodified.
 
+Called with an options object, `explain` returns the aggregate `MultiStatementAnalysis` instead, whatever the count (see [Multiple statements](#multiple-statements)). `passed` and `message` are on both shapes, so the assertion you write is the same either way.
+
 The `✘` markers are printed in red on an interactive terminal, and left uncoloured when output is piped or `CI` is set. Most test runners (including `node --test`) capture the subprocess stdout, which hides the terminal from the renderer and disables colour; set `FORCE_COLOR=1` to force it back on, or `NO_COLOR=1` to turn it off everywhere. The plain text is identical either way, so assertions never depend on colour.
 
 ### Multiple statements
 
-Sometimes the thing you want to performance-test isn't a single query: a public function calls a private helper that queries, or fetches a row and then fetches its children. Pass an **array** of limits and `explain` checks every statement the callback issues, pairing them **by execution order**:
+Sometimes the thing you want to performance-test isn't a single query: a public function calls a private helper that queries, or fetches a row and then fetches its children. Say how many statements you expect and `explain` checks every one the callback issues:
 
 ```ts
-const analysis = await explain((db) => findRoomAvailability(db, 42), [
-  { maxCost: 100 },                                        // the lookup in the private helper
-  { maxCost: 500, allowOperations: [Operation.SEQ_SCAN] }, // the availability query itself
-]);
+const analysis = await explain((db) => findRoomAvailability(db, 42), { statements: 2 });
 
 assert.ok(analysis.passed, analysis.message);
 ```
 
-Each entry merges over the defaults independently, exactly as a single override does, so `{}` means "defaults only, no exception for this statement".
+Every statement is checked against the defaults, which is often all you want. When a particular statement needs its own allowance, pass an **array** of limits and `explain` pairs them with the statements **by execution order**:
 
-The array length is also a **contract on how many statements run**. If the callback issues more or fewer than there are entries, `explain` throws naming both numbers, so an accidental extra query (a helper that grew a second lookup, an N+1 introduced by a refactor) fails the test rather than slipping through unmeasured. An empty array is rejected: asserting that a function makes no queries isn't what `explain` is for.
+```ts
+const analysis = await explain((db) => findRoomAvailability(db, 42), {
+  statements: 2,
+  limits: [
+    { maxCost: 100 },                                        // the lookup in the private helper
+    { maxCost: 500, allowOperations: [Operation.SEQ_SCAN] }, // the availability query itself
+  ],
+});
+```
 
-The return value is an aggregate rather than a single `Analysis`:
+Each entry merges over the defaults independently, exactly as a single override does, so `{}` means "defaults only, no exception for this statement". `statements` may be omitted when the array already gives the count, and the array may be omitted when the defaults suffice, but one set of limits can never govern several statements: three different queries deserve three considered entries, so write `limits: [{ ... }, {}, {}]` rather than hoping one allowance fits all.
+
+The count is a **contract on how many statements run**. If the callback issues more or fewer, `explain` throws naming both numbers, so an accidental extra query (a helper that grew a second lookup, an N+1 introduced by a refactor) fails the test rather than slipping through unmeasured. This is the whole reason the count is written down rather than inferred: per-statement limits can never catch an N+1, because each of its queries is individually cheap. Only the number gives it away. An empty array of limits, and a `statements` count of zero, are both rejected: asserting that a function makes no queries isn't what `explain` is for.
+
+Whenever you pass `options`, the return value is an aggregate rather than a single `Analysis`, including when the count is one. A `{ statements: 1 }` call still gets the aggregate shape, so a table-driven test that varies the count gets the same shape back on every row:
 
 ```ts
 interface MultiStatementAnalysis {
@@ -194,7 +211,7 @@ Seq Scan on rooms  (cost=0..62431 rows=10 actual=10)  ✘ cost 62431 > 100
 
 Statements that passed are left out of the message entirely.
 
-Concurrent issuance is safe: the driver serializes statements, so a callback that fires independent queries with `Promise.all` can be tested unmodified. Statements pair with limits in the order they begin executing, which for `Promise.all([...])` is the array order in practice; sequential awaits remain the clearest style because they make that order obvious. If a pairing ever surprises you, the failure message prints each statement's SQL and parameters, so the mismatch is visible rather than silent. A statement started but not awaited, such as the loser of a `Promise.race`, still executes, is still measured, and still needs a limits entry: production ran it too, and the race only ignored its result.
+Concurrent issuance is safe: the driver serializes statements, so a callback that fires independent queries with `Promise.all` can be tested unmodified. Statements pair with limits in the order they begin executing, which for `Promise.all([...])` is the array order in practice; sequential awaits remain the clearest style because they make that order obvious. If a pairing ever surprises you, the failure message prints each statement's SQL and parameters, so the mismatch is visible rather than silent. A statement started but not awaited, such as the loser of a `Promise.race`, still executes, is still measured, and still counts towards `statements`: production ran it too, and the race only ignored its result.
 
 ## What it checks
 
@@ -261,7 +278,7 @@ const explain = createExplain(postgresDriver(pool), {
 // this one report genuinely scans a small lookup table, so lift only the
 // SEQ_SCAN ban here; NESTED_LOOP stays disallowed for this query.
 const analysis = await explain((db) => summariseGrades(db), {
-  allowOperations: [Operation.SEQ_SCAN],
+  limits: { allowOperations: [Operation.SEQ_SCAN] },
 });
 ```
 
@@ -281,7 +298,7 @@ Set `rowEstimateTolerance` loosely at first: real optimizer estimates are routin
 
 ## Testing every query
 
-`explain` checks one query. To make sure *no* query escapes checking, drive it from a single map of query name to the arguments and limits it should be tested with, and add one test that fails if any exported query is missing from the map. The queries themselves stay free of any test concerns.
+`explain` checks one query. To make sure *no* query escapes checking, drive it from a single map of query name to the arguments and options it should be tested with, and add one test that fails if any exported query is missing from the map. The queries themselves stay free of any test concerns.
 
 ```ts
 import assert from 'node:assert/strict';
@@ -289,18 +306,20 @@ import { describe, test } from 'node:test';
 import * as reservations from './reservations.ts';
 
 // Each query is either tested with representative arguments and (optional)
-// limit overrides, or explicitly skipped with a reason. A query that appears
-// in the module but not here fails the coverage test below, so it can't be
-// silently untested.
+// options, or explicitly skipped with a reason. A query that appears in the
+// module but not here fails the coverage test below, so it can't be silently
+// untested.
 const THRESHOLDS: Record<keyof typeof reservations, Case[]> = {
   findReservationsByRoom: [
-    { run: (db) => reservations.findReservationsByRoom(db, 42), limits: { maxCost: 200 } },
+    { run: (db) => reservations.findReservationsByRoom(db, 42), options: { limits: { maxCost: 200 } } },
   ],
   occupancyByHotel: [
     // Peak vs shoulder season: selectivity differs, so test both.
     { run: (db) => reservations.occupancyByHotel(db, 3, '2025-07-01', '2025-07-31') },
-    { run: (db) => reservations.occupancyByHotel(db, 3, '2025-11-01', '2025-11-30'), limits: { rowEstimateTolerance: 50 } },
+    { run: (db) => reservations.occupancyByHotel(db, 3, '2025-11-01', '2025-11-30'), options: { limits: { rowEstimateTolerance: 50 } } },
   ],
+  // Fetches the hotel, then its rooms: two statements, both on the defaults.
+  roomsByHotel: [{ run: (db) => reservations.roomsByHotel(db, 3), options: { statements: 2 } }],
   rebuildStatistics: [{ skip: 'VACUUM cannot run inside a transaction' }],
 };
 
@@ -317,7 +336,7 @@ describe('query performance', () => {
           t.skip(c.skip);
           continue;
         }
-        const analysis = await explain(c.run, c.limits);
+        const analysis = await explain(c.run, c.options ?? { statements: 1 });
         assert.ok(analysis.passed, analysis.message);
       }
     });

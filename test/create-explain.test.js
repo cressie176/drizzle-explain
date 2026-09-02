@@ -6,6 +6,15 @@ function stubDriver(statements) {
   return { explain: async () => statements };
 }
 
+function countingDriver(statements) {
+  const driver = { runs: 0 };
+  driver.explain = async () => {
+    driver.runs += 1;
+    return statements;
+  };
+  return driver;
+}
+
 function statement(root, plan = { raw: true }, sql = 'select 1', params = []) {
   return { sql, params, plan, root };
 }
@@ -176,7 +185,7 @@ describe('createExplain', () => {
 
       await rejects(
         explain(() => {}, [{}, {}]),
-        /expected 2 statements \(limits array length\) but 1 were executed/,
+        /expected 2 statements but 1 were executed/,
       );
     });
 
@@ -185,7 +194,7 @@ describe('createExplain', () => {
 
       await rejects(
         explain(() => {}, [{}, {}]),
-        /expected 2 statements \(limits array length\) but 3 were executed/,
+        /expected 2 statements but 3 were executed/,
       );
     });
 
@@ -206,6 +215,131 @@ describe('createExplain', () => {
         /exactly one statement/,
       );
     });
+  });
+
+  describe('an options object', () => {
+    test('checks every statement against the defaults when only a count is given', async () => {
+      const driver = stubDriver([
+        statement(node({ cost: 10 })),
+        statement(node({ cost: 10 })),
+        statement(node({ cost: 10 })),
+      ]);
+      const explain = createExplain(driver, { maxCost: 100 });
+
+      const analysis = await explain(() => {}, { statements: 3 });
+
+      eq(analysis.passed, true);
+      eq(analysis.statements.length, 3);
+      deq(
+        analysis.statements.map((each) => each.limits),
+        [{ maxCost: 100 }, { maxCost: 100 }, { maxCost: 100 }],
+      );
+    });
+
+    test('pairs an array of limits with the statements in the same position', async () => {
+      const driver = stubDriver([statement(node({ cost: 50 })), statement(node({ cost: 300 }))]);
+      const explain = createExplain(driver);
+
+      const analysis = await explain(() => {}, { statements: 2, limits: [{ maxCost: 100 }, { maxCost: 500 }] });
+
+      eq(analysis.passed, true);
+      deq(
+        analysis.statements.map((each) => each.limits),
+        [{ maxCost: 100 }, { maxCost: 500 }],
+      );
+    });
+
+    test('infers the count from an array of limits when no count is given', async () => {
+      const driver = stubDriver([statement(node({ cost: 1 })), statement(node({ cost: 1 }))]);
+      const explain = createExplain(driver);
+
+      const analysis = await explain(() => {}, { limits: [{ maxCost: 100 }, { maxCost: 500 }] });
+
+      eq(analysis.statements.length, 2);
+    });
+
+    test('returns a multi-statement analysis even for a single statement', async () => {
+      const explain = createExplain(stubDriver([statement(node({ cost: 50 }))]));
+
+      const analysis = await explain(() => {}, { limits: { maxCost: 100 } });
+
+      eq(analysis.statements.length, 1);
+      deq(analysis.statements[0].limits, { maxCost: 100 });
+    });
+
+    test('accepts one set of limits alongside a count of one', async () => {
+      const explain = createExplain(stubDriver([statement(node({ cost: 50 }))]));
+
+      const analysis = await explain(() => {}, { statements: 1, limits: { maxCost: 100 } });
+
+      eq(analysis.passed, true);
+      eq(analysis.statements.length, 1);
+    });
+
+    test('fails when any statement breaches its limits', async () => {
+      const driver = stubDriver([statement(node({ cost: 50 })), statement(node({ cost: 900 }))]);
+      const explain = createExplain(driver, { maxCost: 100 });
+
+      const analysis = await explain(() => {}, { statements: 2 });
+
+      eq(analysis.passed, false);
+      match(analysis.message, /statement 2 of 2/);
+    });
+
+    test('throws when the callback executes a different number of statements', async () => {
+      const explain = createExplain(stubDriver([statement(node({})), statement(node({}))]));
+
+      await rejects(
+        explain(() => {}, { statements: 3 }),
+        /expected 3 statements but 2 were executed/,
+      );
+    });
+
+    test('throws when the count and the array of limits disagree', async () => {
+      const driver = countingDriver([statement(node({}))]);
+      const explain = createExplain(driver);
+
+      await rejects(
+        explain(() => {}, { statements: 3, limits: [{}, {}] }),
+        /given 2 sets of limits but statements is 3; they must agree/,
+      );
+      eq(driver.runs, 0);
+    });
+
+    test('throws rather than applying one set of limits to several statements', async () => {
+      const driver = countingDriver([statement(node({}))]);
+      const explain = createExplain(driver);
+
+      await rejects(
+        explain(() => {}, { statements: 3, limits: { maxCost: 100 } }),
+        /cannot apply one set of limits to 3 statements/,
+      );
+      eq(driver.runs, 0);
+    });
+
+    test('throws when the array of limits is empty', async () => {
+      const driver = countingDriver([statement(node({}))]);
+      const explain = createExplain(driver);
+
+      await rejects(
+        explain(() => {}, { limits: [] }),
+        /at least one set of limits/,
+      );
+      eq(driver.runs, 0);
+    });
+
+    for (const statements of [0, -1, 1.5, '2', null]) {
+      test(`throws when the count is ${JSON.stringify(statements)}`, async () => {
+        const driver = countingDriver([statement(node({}))]);
+        const explain = createExplain(driver);
+
+        await rejects(
+          explain(() => {}, { statements }),
+          /statements to be a positive integer/,
+        );
+        eq(driver.runs, 0);
+      });
+    }
   });
 
   test('skips a limit the driver cannot supply a signal for', async () => {

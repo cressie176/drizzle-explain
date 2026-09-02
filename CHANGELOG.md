@@ -4,6 +4,25 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - Unreleased
+
+### Added
+
+- `explain` accepts an **options object** as its second argument: `{ statements?, limits? }`. `statements` states how many statements the callback is expected to execute, so the contract on statement count is written down rather than inferred from the length of a limits array. `limits` takes the same overrides as before, either one set or one per statement.
+- `explain(fn, { statements: 3 })` checks all three statements against the defaults, with no need to repeat `[{}, {}, {}]`. This was the friction that motivated the change: previously an array of limits was the only way to admit more than one statement, so a callback issuing several had to spell out an entry per statement even when every entry was empty.
+- Supplying `statements` alongside an array of `limits` states the same count twice and is allowed as long as they agree. Where they disagree, or where one set of limits is offered for more than one statement, `explain` throws before executing anything, because the mistake is in the test rather than in the code under test. A `statements` count that is not a positive integer is rejected the same way, matching the existing rejection of an empty limits array.
+- `ExplainOptions` is exported from the type definitions.
+
+### Changed
+
+- Any call passing an options object returns a `MultiStatementAnalysis`, including `{ statements: 1 }`. Only `explain(fn)` and the deprecated bare-limits form return a single `Analysis`. This keeps the return shape a property of how the call is written rather than of how many statements happened to run, so a table-driven test that varies the count gets the same shape back on every row. `passed` and `message` are on both shapes, so the assertion you write is unchanged.
+- The statement-count mismatch error no longer attributes the expected number to the limits array, since it may now come from `statements`: `explain expected 3 statements but 5 were executed`.
+- The single-statement error names the fix: *If this function legitimately issues several, pass `{ statements: n }`, optionally with one set of limits per statement.*
+
+### Deprecated
+
+- Passing limits directly as the second argument, `explain(fn, { maxCost: 200 })` and `explain(fn, [{ ... }, { ... }])`. Both still work, still enforce the same statement counts, and still return what they always did, so no change is required now. Move them under `limits` and give the array form an explicit `statements` count. They will be removed in 2.0.
+
 ## [1.1.3] - 2026-09-01
 
 ### Added

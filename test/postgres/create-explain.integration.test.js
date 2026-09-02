@@ -117,12 +117,30 @@ describe('createExplain over the PostgreSQL driver', () => {
     equal(analysis.statements[0].passed, true);
   });
 
+  test('checks every statement against the defaults when only a count is given', async () => {
+    const explain = createExplain(postgresDriver(pool), { maxCost: 1000000 });
+
+    const analysis = await explain((db) => findWidgetNamedLike(db, 'beta'), { statements: 2 });
+
+    equal(analysis.passed, true, analysis.message);
+    equal(analysis.statements.length, 2);
+  });
+
+  test('throws when the callback issues a different number of statements than the count', async () => {
+    const explain = createExplain(postgresDriver(pool));
+
+    await rejects(
+      explain((db) => findWidgetNamedLike(db, 'beta'), { statements: 1 }),
+      /expected 1 statements but 2 were executed/,
+    );
+  });
+
   test('throws when the callback issues more statements than limits supplied', async () => {
     const explain = createExplain(postgresDriver(pool));
 
     await rejects(
       explain((db) => findWidgetNamedLike(db, 'beta'), [{}]),
-      /expected 1 statements \(limits array length\) but 2 were executed/,
+      /expected 1 statements but 2 were executed/,
     );
   });
 

@@ -108,12 +108,30 @@ describe('createExplain over the MariaDB driver', () => {
     match(analysis.message, /params: \[30\]/);
   });
 
+  test('checks every statement against the defaults when only a count is given', async () => {
+    const explain = createExplain(mariadbDriver(client), { maxCost: 1000000 });
+
+    const analysis = await explain((db) => findWidgetsStockedLike(db, 'b'), { statements: 2 });
+
+    equal(analysis.passed, true, analysis.message);
+    equal(analysis.statements.length, 2);
+  });
+
+  test('throws when the callback issues a different number of statements than the count', async () => {
+    const explain = createExplain(mariadbDriver(client));
+
+    await rejects(
+      explain((db) => findWidgetsStockedLike(db, 'b'), { statements: 1 }),
+      /expected 1 statements but 2 were executed/,
+    );
+  });
+
   test('throws when the callback issues more statements than limits supplied', async () => {
     const explain = createExplain(mariadbDriver(client));
 
     await rejects(
       explain((db) => findWidgetsStockedLike(db, 'b'), [{}]),
-      /expected 1 statements \(limits array length\) but 2 were executed/,
+      /expected 1 statements but 2 were executed/,
     );
   });
 

@@ -53,9 +53,22 @@ export interface Driver<TDatabase = unknown> {
 
 export type QueryFunction<TDatabase, TQuery> = (db: TDatabase) => TQuery;
 
+/**
+ * How many statements the callback is expected to execute, and the limits each
+ * one is checked against. Supply `statements`, `limits`, or both; when both are
+ * given they must agree, and one set of limits can only govern one statement.
+ */
+export type ExplainOptions =
+  | { statements: number; limits?: Limits | Limits[] }
+  | { statements?: number; limits: Limits | Limits[] };
+
 export interface ExplainFunction<TDatabase> {
+  (run: QueryFunction<TDatabase, unknown>): Promise<Analysis>;
+  (run: QueryFunction<TDatabase, unknown>, options: ExplainOptions): Promise<MultiStatementAnalysis>;
+  /** @deprecated Pass `{ limits: [...] }` instead. Removed in 2.0. */
   (run: QueryFunction<TDatabase, unknown>, overrides: Limits[]): Promise<MultiStatementAnalysis>;
-  (run: QueryFunction<TDatabase, unknown>, overrides?: Limits): Promise<Analysis>;
+  /** @deprecated Pass `{ limits: { ... } }` instead. Removed in 2.0. */
+  (run: QueryFunction<TDatabase, unknown>, overrides: Limits): Promise<Analysis>;
 }
 
 export function createExplain<TDatabase>(driver: Driver<TDatabase>, defaults?: Limits): ExplainFunction<TDatabase>;
