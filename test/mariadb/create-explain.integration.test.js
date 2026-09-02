@@ -156,6 +156,23 @@ describe('createExplain over the MariaDB driver', () => {
     equal(Number(rows[0].total), 0);
   });
 
+  test('catches a selectivity misestimate the optimizer made on a filtered scan', async () => {
+    const explain = createExplain(mariadbDriver(client), { rowEstimateTolerance: 2 });
+
+    const analysis = await explain((db) => db.select().from(widgets).where(eq(widgets.quantity, 20)));
+
+    equal(analysis.passed, false);
+    match(analysis.message, /row estimate 3x off, limit 2/);
+  });
+
+  test('stays quiet when the optimizer estimated the row count correctly', async () => {
+    const explain = createExplain(mariadbDriver(client), { rowEstimateTolerance: 2 });
+
+    const analysis = await explain((db) => db.select().from(widgets));
+
+    equal(analysis.passed, true, analysis.message);
+  });
+
   test('rolls back a write executed through the query callback', async () => {
     const explain = createExplain(mariadbDriver(client));
 

@@ -342,6 +342,20 @@ describe('mariadbDriver', () => {
       const [access] = flatten(statement.root).filter((node) => node.relation);
       equal(returned.length, 1);
       equal(access.scanned, 3);
+      equal(access.actualRows, 1);
+    });
+
+    test('reports actual rows equal to what an unfiltered query returns', async () => {
+      const driver = mariadbDriver(client);
+      let returned;
+
+      const [statement] = await driver.explain(async (db) => {
+        returned = await db.select().from(widgets);
+      });
+
+      const [access] = flatten(statement.root).filter((node) => node.relation);
+      equal(access.actualRows, returned.length);
+      equal(access.scanned, returned.length);
     });
 
     test('leaves the query block with no relation of its own', async () => {
