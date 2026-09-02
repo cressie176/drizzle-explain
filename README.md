@@ -342,11 +342,12 @@ allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'countries', maxSca
 
 On MariaDB, `relation` carries the alias where a query aliases the table, since MariaDB reports only the one name. Drizzle does not alias plain selects but does alias relational queries and self-joins.
 
-Four details worth knowing:
+Five details worth knowing:
 
 - A node the driver reported no count for is never exempted by a condition testing that count. The exemption fails closed, because a driver that cannot supply the signal must not silently exempt everything.
 - Every entry must name an operation **and** at least one condition. A bare `{ maxScanned: 500 }` would lift every ban at once, and `{ operation: Operation.SEQ_SCAN }` would lift one ban across the whole plan; both are rejected rather than interpreted.
 - An entry naming a condition that does not exist is rejected too. A typo such as `maxScannned` would otherwise quietly become an unconditional exemption.
+- An operation neither list recognises is rejected, in `disallowOperations` as well. `disallowOperations: ['SEQ SCAN']` would otherwise match nothing and pass, leaving a test that reads as though it asserts something and asserts nothing. Both lists are checked when the limits are read, so the error does not depend on whether the plan happened to contain a matching node.
 - Exemptions are annotated in the failure message, as above, but a plan where nothing else failed produces no message at all, so an exemption on an otherwise clean plan is not reported.
 
 > **Deprecated: the plan-wide form.** Passing a bare `Operation`, `allowOperations: [Operation.SEQ_SCAN]`, lifts the ban on every matching node in the plan. It still works and will until 2.0, but it widens silently: a query touching one table today carries its exemption onto every table it joins tomorrow, with nothing in the output to say so. Give the entry a condition instead.

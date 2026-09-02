@@ -356,6 +356,50 @@ describe('analysePlan', () => {
         eq(result.passed, true);
       });
 
+      test('rejects an unrecognised operation in disallowOperations', () => {
+        const root = node({ operation: Operation.SEQ_SCAN });
+        throws(
+          () => analysePlan(root, { disallowOperations: ['SEQ SCAN'] }),
+          /disallowOperations received an unrecognised operation: "SEQ SCAN"/,
+        );
+      });
+
+      test('rejects an unrecognised operation in allowOperations', () => {
+        const root = node({ operation: Operation.SEQ_SCAN });
+        throws(
+          () =>
+            analysePlan(root, {
+              disallowOperations: [Operation.SEQ_SCAN],
+              allowOperations: [{ operation: 'seq_scan', maxScanned: 10 }],
+            }),
+          /allowOperations received an unrecognised operation: "seq_scan"/,
+        );
+      });
+
+      test('rejects a malformed entry even when the plan has nothing to exempt', () => {
+        const root = node({ operation: Operation.INDEX_SCAN });
+        throws(
+          () =>
+            analysePlan(root, {
+              disallowOperations: [Operation.SEQ_SCAN],
+              allowOperations: [{ operation: Operation.SEQ_SCAN, maxScannned: 500 }],
+            }),
+          /unknown conditions: maxScannned/,
+        );
+      });
+
+      test('rejects an unconditional entry even when the plan has nothing to exempt', () => {
+        const root = node({ operation: Operation.INDEX_SCAN });
+        throws(
+          () =>
+            analysePlan(root, {
+              disallowOperations: [Operation.SEQ_SCAN],
+              allowOperations: [{ operation: Operation.SEQ_SCAN }],
+            }),
+          /names no condition/,
+        );
+      });
+
       test('rejects an entry naming a condition that does not exist', () => {
         const root = node({ operation: Operation.SEQ_SCAN, scanned: 40 });
         throws(
