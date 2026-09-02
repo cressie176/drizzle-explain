@@ -46,6 +46,12 @@ describe('postgres plan translator', () => {
       equal(node.loops, undefined);
     });
 
+    test('reports whole rows even where the counts are averages', () => {
+      const node = nodeOf({ 'Relation Name': 'widgets', 'Actual Rows': 1.4, 'Rows Removed by Filter': 5.4, 'Actual Loops': 3 });
+
+      equal(node.scanned, 20);
+    });
+
     test('leaves a node that reads no relation without a scanned count', () => {
       const node = nodeOf({ 'Node Type': 'Hash Join', 'Actual Rows': 40, 'Actual Loops': 2 });
 
