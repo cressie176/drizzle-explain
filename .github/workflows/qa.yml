@@ -70,8 +70,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm ci
+      - run: npm install --no-audit --no-fund
         working-directory: examples/hotel-chain
       - run: npm run typecheck --workspaces
         working-directory: examples/hotel-chain
