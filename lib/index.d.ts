@@ -19,6 +19,7 @@ export interface PlanNode {
   estimatedRows?: number;
   actualRows?: number;
   scanned?: number;
+  loops?: number;
   actualTimeMs?: number;
   children: PlanNode[];
 }

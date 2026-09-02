@@ -1,7 +1,8 @@
 const { equal, deepEqual: deq, ok, rejects } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
+const { analysePlan } = require('../../lib/analyse-plan');
 const { alias } = require('drizzle-orm/pg-core');
-const { count, eq, TransactionRollbackError } = require('drizzle-orm');
+const { count, eq, sql, TransactionRollbackError } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
 const { postgresDriver } = require('../../postgres');
 const { Operation } = require('../../lib/operation');
@@ -409,6 +410,55 @@ describe('postgresDriver', () => {
     });
   });
 
+  describe('repeated executions', () => {
+    before(async () => {
+      await pool.query('DROP TABLE IF EXISTS outers');
+      await pool.query('CREATE TABLE outers (id integer)');
+      await pool.query('INSERT INTO outers SELECT g FROM generate_series(1, 200) g');
+      await pool.query('DROP TABLE IF EXISTS inners');
+      await pool.query('CREATE TABLE inners (id integer, tag text)');
+      await pool.query("INSERT INTO inners SELECT g, 't' || g FROM generate_series(1, 2000) g");
+      await pool.query('ANALYZE outers');
+      await pool.query('ANALYZE inners');
+    });
+
+    after(async () => {
+      await pool.query('DROP TABLE IF EXISTS inners');
+      await pool.query('DROP TABLE IF EXISTS outers');
+    });
+
+    const lateralScan = (db) =>
+      db.execute(
+        sql`SELECT o.id, s.n FROM outers o, LATERAL (SELECT count(*) AS n FROM inners i WHERE i.tag = 't' || o.id AND i.id > 0) s`,
+      );
+
+    test('counts the rows a repeatedly-executed scan read across every execution', async () => {
+      const driver = postgresDriver(pool);
+
+      const [statement] = await driver.explain(lateralScan);
+
+      const [inner] = flatten(statement.root).filter((node) => node.relation === 'inners');
+      equal(inner.loops, 200);
+      equal(inner.scanned, 400000);
+      equal(inner.actualRows, 1);
+    });
+
+    test('a scan repeated past the threshold is not exempted by maxScanned', async () => {
+      const driver = postgresDriver(pool);
+      const limits = {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 500 }],
+      };
+
+      const [statement] = await driver.explain(lateralScan);
+      const analysis = analysePlan(statement.root, limits);
+
+      equal(analysis.passed, false);
+      equal(analysis.breaches.length, 1);
+      equal(analysis.breaches[0].node.relation, 'inners');
+    });
+  });
+
   test('leaves the database unchanged after a write', async () => {
     const driver = postgresDriver(pool);
 
@@ -435,3 +485,7 @@ describe('postgresDriver', () => {
     equal(pool.idleCount, pool.totalCount);
   });
 });
+
+function flatten(node) {
+  return [node, ...node.children.flatMap(flatten)];
+}

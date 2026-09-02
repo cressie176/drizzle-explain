@@ -206,6 +206,24 @@ describe('renderPlan', () => {
       match(render(root, analysis), /\(cost=5 estimated=1 actual=1 scanned=20000 time=3ms\)/);
     });
 
+    test('renders the loop count only when the node ran more than once', () => {
+      const node = (loops) => ({
+        type: 'Seq Scan',
+        relation: 'books',
+        cost: 5,
+        actualRows: 1,
+        scanned: 20000,
+        loops,
+        children: [],
+      });
+      const looped = node(200);
+      const once = node(1);
+      const breach = (node) => ({ passed: false, breaches: [{ node, limit: 'maxCost', threshold: 1, observed: 5 }] });
+
+      match(render(looped, breach(looped)), /actual=1 scanned=20000 loops=200/);
+      doesNotMatch(render(once, breach(once)), /loops=/);
+    });
+
     test('omits rows scanned when the driver did not report it', () => {
       const root = { type: 'Seq Scan', relation: 'widgets', cost: 5, actualRows: 1, children: [] };
       const analysis = { passed: false, breaches: [{ node: root, limit: 'maxCost', threshold: 1, observed: 5 }] };

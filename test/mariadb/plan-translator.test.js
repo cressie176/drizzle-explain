@@ -35,6 +35,28 @@ describe('mariadb plan translator', () => {
       equal(node.actualRows, 1);
     });
 
+    test('multiplies rows scanned by the number of times the node ran', () => {
+      const node = accessNodeOf({
+        table_name: 'widgets',
+        access_type: 'ALL',
+        rows: 2000,
+        r_rows: 2000,
+        r_loops: 200,
+        r_filtered: 0.05,
+      });
+
+      equal(node.scanned, 400000);
+      equal(node.loops, 200);
+      equal(node.actualRows, 1);
+    });
+
+    test('assumes one execution where the plan reports no loop count', () => {
+      const node = accessNodeOf({ table_name: 'widgets', access_type: 'ALL', rows: 40, r_rows: 40 });
+
+      equal(node.scanned, 40);
+      equal(node.loops, undefined);
+    });
+
     test('keeps the raw counts when the plan reports no filtered percentages', () => {
       const node = accessNodeOf({ table_name: 'widgets', access_type: 'ALL', rows: 200, r_rows: 300 });
 

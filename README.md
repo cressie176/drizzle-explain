@@ -323,8 +323,8 @@ The lookup table is exempt and says why; the large table in the same plan still 
 |---|---|
 | operation | required on every entry, the operation being lifted |
 | relation | only nodes reading the table it names |
-| maxScanned | only nodes reading at most that many rows, before filtering |
-| maxActualRows | only nodes producing at most that many rows, after filtering |
+| maxScanned | only nodes reading at most that many rows in total, before filtering |
+| maxActualRows | only nodes producing at most that many rows per execution, after filtering |
 
 For a scan, `maxScanned` is the size condition you want, because it counts what the node read rather than what survived the filter. A scan of 20,000 rows returning one has `actualRows` of 1, so `maxActualRows` would wave through the very plan you are hunting. `maxActualRows` exists for the operations that read no table at all, joins and sorts, where rows produced is the only size there is:
 
@@ -504,8 +504,9 @@ interface PlanNode {
   alias?: string;            // the query's alias for it, where it differs
   cost?: number;             // optimizer's estimated cost
   estimatedRows?: number;    // optimizer's estimated row count
-  actualRows?: number;       // rows the node actually produced
-  scanned?: number;          // rows it read to produce them, before filtering
+  actualRows?: number;       // rows the node actually produced, per execution
+  scanned?: number;          // rows it read across every execution, before filtering
+  loops?: number;            // times the node ran, where the database reports it
   actualTimeMs?: number;     // reported, never asserted
   children: PlanNode[];
 }
@@ -513,7 +514,7 @@ interface PlanNode {
 
 The core walks that normalized tree and never sees a vendor-specific plan key, so support for a new database is a new driver, not a change to the engine.
 
-`relation` and `scanned` are what make a failure legible. Without them a plan joining two tables reports two identical `Seq Scan` lines, and the metrics actively mislead, because `estimatedRows` and `actualRows` are both counts of rows *produced*, after filtering. A scan that reads 20,000 rows to return one shows `estimated=1 actual=1`, which looks smaller than the harmless 40-row lookup table beside it. `scanned` is the count *before* filtering, so the waste a scan does is `scanned` minus `actualRows`, and `scanned` equal to `actualRows` is the signature of a scan throwing nothing away:
+`relation` and `scanned` are what make a failure legible. Without them a plan joining two tables reports two identical `Seq Scan` lines, and the metrics actively mislead, because `estimatedRows` and `actualRows` are both counts of rows *produced*, after filtering. A scan that reads 20,000 rows to return one shows `estimated=1 actual=1`, which looks smaller than the harmless 40-row lookup table beside it. `scanned` is the count *before* filtering, so the waste a scan does is `scanned` minus the rows it produced, and the two being equal is the signature of a scan throwing nothing away:
 
 ```
 ✘ disallowed operation: Seq Scan on books
@@ -524,6 +525,14 @@ Nested Loop  (cost=360.9 estimated=1 actual=1 time=0.668ms)
 ```
 
 Both are supplied only where the database reports them. PostgreSQL gives the table and its alias separately, so an aliased scan renders as `Seq Scan on books b`; MariaDB reports only the alias once a query uses one, so `relation` carries whichever name it gave and `alias` stays unset.
+
+Both databases report a node's row counts **per execution**, and a node on the inner side of a nested loop runs once per outer row. `estimatedRows` and `actualRows` are therefore per execution, which is what `rowEstimateTolerance` wants, since it compares them against each other. `scanned` is the odd one out: it is a **total across every execution**, because the question it answers, is this table small enough that reading it is fine, is about the whole query rather than one pass. `loops` carries the count where the database reports it, and the renderer shows it when it is greater than one, so a line reading `scanned=20000 actual=100 loops=200` explains itself:
+
+```
+Seq Scan on inners  (cost=31 estimated=2000 actual=100 scanned=20000 loops=200)  ✘ Seq Scan not allowed
+```
+
+Without the multiplication a `maxScanned` of 500 would exempt that node, which reads 20,000 rows to produce 100. An unindexed scan on the inner side of a nested loop is the pathology the check exists to catch, so `scanned` counts the work actually done.
 
 The two databases count rows differently, and the driver reconciles them. PostgreSQL reports produced counts directly and the rows a filter discarded alongside, so `scanned` is their sum. MariaDB reports *read* counts (`rows`, `r_rows`) with the proportion surviving the filter as a separate percentage (`filtered`, `r_filtered`), so the driver multiplies the two to get the produced counts and keeps the raw read count as `scanned`, rounding to whole rows. Where a plan reports no percentage the raw counts stand. The effect is that `estimatedRows` and `actualRows` mean the same thing on both drivers, which also lets `rowEstimateTolerance` see a MariaDB optimizer that misjudged a filter's selectivity rather than only one that misjudged a table's size. `type` keeps the database's own label for rendering; `operation` is the driver's mapping of that node onto the normalized [`Operation`](#disallowoperations) category the `disallowOperations` check tests against (left unset where the driver can't classify it). The raw, untranslated plan is preserved in `analysis.plan` because that's the format you already know how to read.
 
