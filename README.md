@@ -151,8 +151,7 @@ assert.ok(analysis.passed, analysis.message);
 ```
 ✘ cost 62431 exceeds limit 100
 
-Seq Scan on reservations  (cost=0..62431 rows=10 actual=10)  ✘ cost 62431 > 100
-  Filter: (room_id = 42)
+Seq Scan on reservations  (cost=62431 rows=10 actual=10 scanned=240000 time=181.4ms)  ✘ cost 62431 > 100
 ```
 
 The raw plan is always available in `analysis.plan` if you want to log or inspect the full detail; it is the database's native EXPLAIN output, unmodified.
@@ -206,7 +205,7 @@ statement 2 of 2
 
 ✘ cost 62431 exceeds limit 100
 
-Seq Scan on rooms  (cost=0..62431 rows=10 actual=10)  ✘ cost 62431 > 100
+Seq Scan on rooms  (cost=62431 rows=10 actual=10 scanned=240000 time=181.4ms)  ✘ cost 62431 > 100
 ```
 
 Statements that passed are left out of the message entirely.
