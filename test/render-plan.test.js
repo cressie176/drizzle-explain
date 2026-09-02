@@ -25,7 +25,9 @@ describe('renderPlan', () => {
 
     eq(
       message,
-      ['✘ cost 62431 exceeds limit 100', '', 'Seq Scan  (cost=62431 estimated=10 actual=10)  ✘ cost 62431 > 100'].join('\n'),
+      ['✘ cost 62431 exceeds limit 100', '', 'Seq Scan  (cost=62431 estimated=10 actual=10)  ✘ cost 62431 > 100'].join(
+        '\n',
+      ),
     );
   });
 
@@ -40,9 +42,11 @@ describe('renderPlan', () => {
 
     eq(
       message,
-      ['✘ row estimate 340x off, limit 10', '', 'Index Scan  (cost=8 estimated=1 actual=340)  ✘ 340x off, limit 10'].join(
-        '\n',
-      ),
+      [
+        '✘ row estimate 340x off, limit 10',
+        '',
+        'Index Scan  (cost=8 estimated=1 actual=340)  ✘ 340x off, limit 10',
+      ].join('\n'),
     );
   });
 
@@ -57,9 +61,11 @@ describe('renderPlan', () => {
 
     eq(
       message,
-      ['✘ disallowed operation: Seq Scan', '', 'Seq Scan  (cost=62431 estimated=10 actual=10)  ✘ Seq Scan not allowed'].join(
-        '\n',
-      ),
+      [
+        '✘ disallowed operation: Seq Scan',
+        '',
+        'Seq Scan  (cost=62431 estimated=10 actual=10)  ✘ Seq Scan not allowed',
+      ].join('\n'),
     );
   });
 
