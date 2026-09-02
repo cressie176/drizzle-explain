@@ -241,6 +241,44 @@ describe('createExplain over the MariaDB driver', () => {
       match(analysis.message, /ALL on lookups.*✓ allowed by relation=lookups/);
     });
 
+    test('maxActualRows exempts a scan that produced few rows', async () => {
+      const explain = createExplain(mariadbDriver(client), {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, maxActualRows: 100 }],
+      });
+
+      const analysis = await explain(joinBoth);
+
+      equal(analysis.passed, true, analysis.message);
+    });
+
+    test('maxActualRows still fails a scan that produced too many rows', async () => {
+      const explain = createExplain(mariadbDriver(client), {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, maxActualRows: 100 }],
+      });
+
+      const analysis = await explain((db) =>
+        db.select().from(events).innerJoin(lookups, eq(events.lookupId, lookups.id)),
+      );
+
+      equal(analysis.passed, false);
+    });
+
+    test('maxActualRows exempts a scan that maxScanned would not, since it counts rows produced', async () => {
+      const byProduced = createExplain(mariadbDriver(client), {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, maxActualRows: 100 }],
+      });
+      const byScanned = createExplain(mariadbDriver(client), {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 100 }],
+      });
+
+      equal((await byProduced(joinBoth)).passed, true);
+      equal((await byScanned(joinBoth)).passed, false);
+    });
+
     test('a maxScanned generous enough for both passes the plan', async () => {
       const explain = createExplain(mariadbDriver(client), {
         disallowOperations: [Operation.SEQ_SCAN],

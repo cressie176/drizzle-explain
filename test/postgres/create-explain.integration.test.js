@@ -233,6 +233,37 @@ describe('createExplain over the PostgreSQL driver', () => {
       match(analysis.message, /Seq Scan on lookups.*✓ allowed by relation=lookups/);
     });
 
+    test('maxActualRows exempts a join node that produced few rows', async () => {
+      const explain = createExplain(postgresDriver(pool), {
+        disallowOperations: [Operation.SEQ_SCAN, Operation.NESTED_LOOP, Operation.HASH_JOIN],
+        allowOperations: [
+          { operation: Operation.SEQ_SCAN, maxScanned: 10000 },
+          { operation: Operation.NESTED_LOOP, maxActualRows: 1000 },
+          { operation: Operation.HASH_JOIN, maxActualRows: 1000 },
+        ],
+      });
+
+      const analysis = await explain(joinBoth);
+
+      equal(analysis.passed, true, analysis.message);
+    });
+
+    test('maxActualRows still fails a join node that produced too many rows', async () => {
+      const explain = createExplain(postgresDriver(pool), {
+        disallowOperations: [Operation.NESTED_LOOP, Operation.HASH_JOIN],
+        allowOperations: [
+          { operation: Operation.NESTED_LOOP, maxActualRows: 0 },
+          { operation: Operation.HASH_JOIN, maxActualRows: 0 },
+        ],
+      });
+
+      const analysis = await explain((db) =>
+        db.select().from(events).innerJoin(lookups, eq(events.lookupId, lookups.id)),
+      );
+
+      equal(analysis.passed, false);
+    });
+
     test('a maxScanned generous enough for both passes the plan', async () => {
       const explain = createExplain(postgresDriver(pool), {
         disallowOperations: [Operation.SEQ_SCAN],

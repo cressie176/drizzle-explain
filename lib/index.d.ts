@@ -27,12 +27,21 @@ export interface OperationExemption {
   operation: Operation;
   relation?: string;
   maxScanned?: number;
+  maxActualRows?: number;
 }
 
 export interface Limits {
   maxCost?: number;
   rowEstimateTolerance?: number;
   disallowOperations?: Operation[];
+  /**
+   * Lifts a `disallowOperations` ban on the nodes an entry matches. An entry must name an
+   * operation and at least one condition, so it states which nodes it covers.
+   *
+   * Passing a bare `Operation` lifts the ban across the whole plan. It is deprecated because a
+   * query that later gains a join carries the exemption onto the new table silently. Scope the
+   * entry with `relation`, `maxScanned` or `maxActualRows` instead. Removed in 2.0.
+   */
   allowOperations?: (Operation | OperationExemption)[];
 }
 

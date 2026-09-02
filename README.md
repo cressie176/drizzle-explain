@@ -116,7 +116,7 @@ Runs the query returned by `fn` through `EXPLAIN ANALYZE` and returns an analysi
 - **fn**: `(db) => query`. Receives an instrumented Drizzle database and returns a single Drizzle query, or, when checking several statements, issues them sequentially or concurrently (see [Multiple statements](#multiple-statements)).
 - **options**: `{ statements?, limits? }`.
   - **statements**: how many statements `fn` is expected to execute. A positive integer, defaulting to 1 or, when `limits` is an array, to that array's length.
-  - **limits**: `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, merged over the defaults for this call only; or an array of those, one per statement. To permit an operation your default bans for one specific query, pass `{ allowOperations: [Operation.SEQ_SCAN] }`; it lifts *only* that operation's ban for that call and leaves the rest of the default `disallowOperations` list intact (see [disallowOperations](#disallowoperations)).
+  - **limits**: `{ maxCost?, rowEstimateTolerance?, disallowOperations?, allowOperations? }`, merged over the defaults for this call only; or an array of those, one per statement. To permit an operation your default bans for one specific query, pass `{ allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 500 }] }`; it lifts *only* that operation's ban, only on the nodes matching the conditions, and leaves the rest of the default `disallowOperations` list intact (see [disallowOperations](#disallowoperations)).
 
 Called with no options at all, `explain` expects exactly one statement. If `fn` runs zero or more than one, it throws: a single query is the unit of measurement. To check a function that legitimately issues several, say how many with `statements` (see [Multiple statements](#multiple-statements)).
 
@@ -176,8 +176,11 @@ Every statement is checked against the defaults, which is often all you want. Wh
 const analysis = await explain((db) => findRoomAvailability(db, 42), {
   statements: 2,
   limits: [
-    { maxCost: 100 },                                        // the lookup in the private helper
-    { maxCost: 500, allowOperations: [Operation.SEQ_SCAN] }, // the availability query itself
+    { maxCost: 100 }, // the lookup in the private helper
+    {
+      maxCost: 500, // the availability query itself
+      allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'grades', maxScanned: 500 }],
+    },
   ],
 });
 ```
@@ -250,17 +253,19 @@ Where `maxCost` catches an expensive plan indirectly, this catches a specific *k
 
 Operations are matched on a **normalized category**, not the database's own plan vocabulary, so the same limit works across drivers. The categories are exposed as the `Operation` enum:
 
-| `Operation` | Matches |
-|---|---|
-| `SEQ_SCAN` | sequential / full-table scan (PostgreSQL `Seq Scan`; MariaDB access type `ALL`/`index`) |
-| `INDEX_SCAN` | index scan (PostgreSQL `Index Scan`/`Index Only Scan`; MariaDB `ref`/`range`/`eq_ref`/`const`) |
-| `BITMAP_SCAN` | PostgreSQL bitmap heap/index scan |
-| `NESTED_LOOP` | nested-loop join |
-| `HASH_JOIN` | hash join |
-| `MERGE_JOIN` | merge / sort-merge join |
-| `SORT` | explicit sort |
-| `AGGREGATE` | grouping / aggregation |
-| `OTHER` | a recognised node with no dedicated category |
+| Operation | PostgreSQL | MariaDB |
+|---|---|---|
+| SEQ_SCAN | Seq Scan | access type ALL or index |
+| INDEX_SCAN | Index Scan, Index Only Scan | access type ref, range, eq_ref or const |
+| BITMAP_SCAN | Bitmap Heap Scan, Bitmap Index Scan | not reported |
+| NESTED_LOOP | Nested Loop | not reported |
+| HASH_JOIN | Hash Join | not reported |
+| MERGE_JOIN | Merge Join | not reported |
+| SORT | Sort | not reported |
+| AGGREGATE | Aggregate | not reported |
+| OTHER | not reported | not reported |
+
+MariaDB's plans describe how each table is reached rather than naming the join and sort algorithms as separate nodes, so only the two scan categories are classified there. Banning a join or sort operation is therefore a PostgreSQL-only check today; it is not an error on MariaDB, it simply never matches. `OTHER` is declared but no driver assigns it: a node neither driver recognises is left with no operation at all, and an unclassified node is never treated as disallowed.
 
 Like `maxCost`, this check **defaults to off**: with `disallowOperations` unset, no plan is ever rejected on operation type. A node the driver couldn't classify is never treated as disallowed.
 
@@ -276,10 +281,11 @@ const explain = createExplain(postgresDriver(pool), {
   disallowOperations: [Operation.SEQ_SCAN, Operation.NESTED_LOOP],
 });
 
-// this one report genuinely scans a small lookup table, so lift only the
-// SEQ_SCAN ban here; NESTED_LOOP stays disallowed for this query.
+// this one report genuinely scans a small lookup table, so lift the SEQ_SCAN
+// ban on that table alone; NESTED_LOOP stays disallowed for this query, and so
+// does a scan of anything else it touches.
 const analysis = await explain((db) => summariseGrades(db), {
-  limits: { allowOperations: [Operation.SEQ_SCAN] },
+  limits: { allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'grades', maxScanned: 500 }] },
 });
 ```
 
@@ -310,16 +316,33 @@ The lookup table is exempt and says why; the large table in the same plan still 
 |---|---|
 | operation | required on every entry, the operation being lifted |
 | relation | only nodes reading the table it names |
-| maxScanned | only nodes reading at most that many rows |
+| maxScanned | only nodes reading at most that many rows, before filtering |
+| maxActualRows | only nodes producing at most that many rows, after filtering |
 
-`maxScanned` is usually the better of the two, because it states *why* the exemption is acceptable rather than merely that someone accepted it, and it withdraws itself: the day the lookup table grows past the threshold the test starts failing, which is the moment you wanted to hear about. `relation` is exact where size is not the reason. They combine, so `{ operation: Operation.SEQ_SCAN, relation: 'countries', maxScanned: 500 }` reads as "allow it on countries, and tell me when countries stops being small".
+For a scan, `maxScanned` is the size condition you want, because it counts what the node read rather than what survived the filter. A scan of 20,000 rows returning one has `actualRows` of 1, so `maxActualRows` would wave through the very plan you are hunting. `maxActualRows` exists for the operations that read no table at all, joins and sorts, where rows produced is the only size there is:
+
+```ts
+allowOperations: [{ operation: Operation.NESTED_LOOP, maxActualRows: 1000 }]
+```
+
+`relation` earns its place alongside a size condition rather than being redundant. A threshold is measured against *your test data*, and in a small test database `{ operation: Operation.SEQ_SCAN, maxScanned: 500 }` exempts every scan in the plan, including the table that genuinely needs an index and only looks harmless because you seeded it with 40 rows. Naming the table bounds the exemption to the one you actually inspected, so the strongest form carries both:
+
+```ts
+allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'countries', maxScanned: 500 }]
+```
+
+"Allow it on countries, and tell me when countries stops being small." `relation` records which node you vouched for; `maxScanned` records what you assumed when you vouched for it, and withdraws the exemption when the assumption stops holding.
+
+On MariaDB, `relation` carries the alias where a query aliases the table, since MariaDB reports only the one name. Drizzle does not alias plain selects but does alias relational queries and self-joins.
 
 Three details worth knowing:
 
-- A node the driver reported no `scanned` count for is never exempted by `maxScanned`. The exemption fails closed, because a driver that cannot supply the signal must not silently exempt everything.
-- Every entry must name an operation. A bare `{ maxScanned: 500 }` would lift every ban at once, so it is rejected rather than interpreted.
+- A node the driver reported no count for is never exempted by a condition testing that count. The exemption fails closed, because a driver that cannot supply the signal must not silently exempt everything.
+- Every entry must name an operation **and** at least one condition. A bare `{ maxScanned: 500 }` would lift every ban at once, and `{ operation: Operation.SEQ_SCAN }` would lift one ban across the whole plan; both are rejected rather than interpreted.
 - An entry naming a condition that does not exist is rejected too. A typo such as `maxScannned` would otherwise quietly become an unconditional exemption.
 - Exemptions are annotated in the failure message, as above, but a plan where nothing else failed produces no message at all, so an exemption on an otherwise clean plan is not reported.
+
+> **Deprecated: the plan-wide form.** Passing a bare `Operation`, `allowOperations: [Operation.SEQ_SCAN]`, lifts the ban on every matching node in the plan. It still works and will until 2.0, but it widens silently: a query touching one table today carries its exemption onto every table it joins tomorrow, with nothing in the output to say so. Give the entry a condition instead.
 
 ### What it does not check
 

@@ -307,6 +307,55 @@ describe('analysePlan', () => {
         eq(result.exemptions.length, 2);
       });
 
+      test('maxActualRows exempts a node that produced few rows', () => {
+        const root = node({ type: 'Nested Loop', operation: Operation.NESTED_LOOP, actualRows: 40 });
+        const result = analysePlan(root, {
+          disallowOperations: [Operation.NESTED_LOOP],
+          allowOperations: [{ operation: Operation.NESTED_LOOP, maxActualRows: 1000 }],
+        });
+        eq(result.passed, true);
+      });
+
+      test('maxActualRows still breaches a node that produced too many', () => {
+        const root = node({ type: 'Nested Loop', operation: Operation.NESTED_LOOP, actualRows: 5000 });
+        const result = analysePlan(root, {
+          disallowOperations: [Operation.NESTED_LOOP],
+          allowOperations: [{ operation: Operation.NESTED_LOOP, maxActualRows: 1000 }],
+        });
+        eq(result.passed, false);
+      });
+
+      test('maxActualRows never exempts a node the driver reported no actual rows for', () => {
+        const root = node({ type: 'Nested Loop', operation: Operation.NESTED_LOOP });
+        const result = analysePlan(root, {
+          disallowOperations: [Operation.NESTED_LOOP],
+          allowOperations: [{ operation: Operation.NESTED_LOOP, maxActualRows: 1000 }],
+        });
+        eq(result.passed, false);
+      });
+
+      test('rejects an entry that names an operation but no condition', () => {
+        const root = node({ operation: Operation.SEQ_SCAN, scanned: 40 });
+        throws(
+          () =>
+            analysePlan(root, {
+              disallowOperations: [Operation.SEQ_SCAN],
+              allowOperations: [{ operation: Operation.SEQ_SCAN }],
+            }),
+          /names no condition.*Scope it with relation, maxScanned, maxActualRows/s,
+        );
+      });
+
+      test('a bare operation still lifts the ban across the plan', () => {
+        const scan = node({ type: 'Seq Scan', operation: Operation.SEQ_SCAN, relation: 'books', scanned: 20000 });
+        const root = node({ operation: Operation.NESTED_LOOP, children: [scan] });
+        const result = analysePlan(root, {
+          disallowOperations: [Operation.SEQ_SCAN],
+          allowOperations: [Operation.SEQ_SCAN],
+        });
+        eq(result.passed, true);
+      });
+
       test('rejects an entry naming a condition that does not exist', () => {
         const root = node({ operation: Operation.SEQ_SCAN, scanned: 40 });
         throws(
