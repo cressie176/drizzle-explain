@@ -1,6 +1,6 @@
-const { equal, match, rejects } = require('node:assert/strict');
+const { equal, match, ok, rejects } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
-const { eq } = require('drizzle-orm');
+const { eq, relations } = require('drizzle-orm');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
 const { createExplain, Operation } = require('../../lib');
 const { mariadbDriver } = require('../../mariadb');
@@ -11,6 +11,23 @@ const widgets = mysqlTable('widgets', {
   name: varchar('name', { length: 64 }),
   quantity: int('quantity'),
 });
+
+const authors = mysqlTable('authors', {
+  id: int('id').primaryKey(),
+  name: varchar('name', { length: 64 }),
+});
+
+const books = mysqlTable('books', {
+  id: int('id').primaryKey(),
+  authorId: int('author_id'),
+  title: varchar('title', { length: 64 }),
+});
+
+const authorsRelations = relations(authors, ({ many }) => ({ books: many(books) }));
+const booksRelations = relations(books, ({ one }) => ({
+  author: one(authors, { fields: [books.authorId], references: [authors.id] }),
+}));
+const relationalSchema = { authors, books, authorsRelations, booksRelations };
 
 async function findQuantityByName(db, name) {
   const [found] = await db.select({ quantity: widgets.quantity }).from(widgets).where(eq(widgets.name, name));
@@ -128,5 +145,37 @@ describe('createExplain over the MariaDB driver', () => {
 
     const [rows] = await client.query('SELECT COUNT(*) AS total FROM widgets WHERE id = 99');
     equal(Number(rows[0].total), 0);
+  });
+});
+
+describe('createExplain over the MariaDB driver with a relational schema', () => {
+  let client;
+
+  before(async () => {
+    client = await connect();
+    await client.query('DROP TABLE IF EXISTS books');
+    await client.query('DROP TABLE IF EXISTS authors');
+    await client.query('CREATE TABLE authors (id INT PRIMARY KEY, name VARCHAR(64))');
+    await client.query('CREATE TABLE books (id INT PRIMARY KEY, author_id INT, title VARCHAR(64))');
+    await client.query("INSERT INTO authors VALUES (1, 'alpha'), (2, 'beta')");
+    await client.query("INSERT INTO books VALUES (1, 1, 'one'), (2, 1, 'two'), (3, 2, 'three')");
+  });
+
+  after(async () => {
+    await client.query('DROP TABLE IF EXISTS books');
+    await client.query('DROP TABLE IF EXISTS authors');
+    await client.end();
+  });
+
+  // A nested `with` compiles to a LEFT JOIN LATERAL, which MariaDB cannot parse, so the
+  // relational query here is a plain findMany: enough to prove the driver forwarded the
+  // schema and populated db.query, without leaning on a join MariaDB does not support.
+  test('explains a relational query when the schema is supplied to the driver', async () => {
+    const explain = createExplain(mariadbDriver(client, { schema: relationalSchema }), { maxCost: 1000000 });
+
+    const analysis = await explain((db) => db.query.authors.findMany({ where: eq(authors.id, 1) }));
+
+    equal(analysis.passed, true, analysis.message);
+    ok(analysis.plan);
   });
 });

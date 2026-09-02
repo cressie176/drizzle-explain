@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-09-01
+
+### Added
+
+- `postgresDriver` and `mariadbDriver` accept an optional second argument, the same Drizzle config you pass to `drizzle()` (`schema`, `relations`, `casing`, …). The driver forwards it when constructing the instrumented database, so callbacks that use the relational query builder (`db.query.<table>.findMany(...)`) can be explained. Previously the driver built the database with no config, leaving `db.query` empty, so a relational query threw `Cannot read properties of undefined`. Callbacks that only use the core query builder (`db.select()`, `db.insert()`, …) need no config and are unaffected. The driver is generic over the database type — `postgresDriver<MyDatabase>(pool, { relations })` — so the callback's `db` can be typed to your schema; it defaults to the untyped database, unchanged from before.
+
 ## [1.1.2] - 2026-09-01
 
 ### Fixed
@@ -65,6 +71,8 @@ Initial release.
 - Annotated plan renderer. On failure, `message` is the plan tree with the offending nodes marked, suitable for printing straight into an assertion failure. Breach markers are coloured on an interactive terminal and honour `NO_COLOR`, `FORCE_COLOR`, and `CI`.
 - Worked examples under `examples/hotel-chain`, performance-testing one booking domain against both databases from a single npm workspace.
 
+[1.1.3]: https://github.com/cressie176/drizzle-explain/compare/v1.1.2...v1.1.3
+[1.1.2]: https://github.com/cressie176/drizzle-explain/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/cressie176/drizzle-explain/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/cressie176/drizzle-explain/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/cressie176/drizzle-explain/compare/v0.1.1...v1.0.0

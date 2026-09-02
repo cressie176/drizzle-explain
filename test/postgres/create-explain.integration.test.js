@@ -1,6 +1,6 @@
 const { equal, deepEqual: deq, match, ok, rejects } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
-const { eq } = require('drizzle-orm');
+const { eq, relations } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
 const { createExplain, Operation } = require('../../lib');
 const { postgresDriver } = require('../../postgres');
@@ -10,6 +10,23 @@ const widgets = pgTable('widgets', {
   id: integer('id'),
   name: text('name'),
 });
+
+const authors = pgTable('authors', {
+  id: integer('id').primaryKey(),
+  name: text('name'),
+});
+
+const books = pgTable('books', {
+  id: integer('id').primaryKey(),
+  authorId: integer('author_id'),
+  title: text('title'),
+});
+
+const authorsRelations = relations(authors, ({ many }) => ({ books: many(books) }));
+const booksRelations = relations(books, ({ one }) => ({
+  author: one(authors, { fields: [books.authorId], references: [authors.id] }),
+}));
+const relationalSchema = { authors, books, authorsRelations, booksRelations };
 
 async function findWidgetIdByName(db, name) {
   const [found] = await db.select({ id: widgets.id }).from(widgets).where(eq(widgets.name, name));
@@ -137,5 +154,32 @@ describe('createExplain over the PostgreSQL driver', () => {
 
     const { rows } = await pool.query('SELECT id FROM widgets WHERE id = 42');
     deq(rows, []);
+  });
+});
+
+describe('createExplain over the PostgreSQL driver with a relational schema', () => {
+  let pool;
+
+  before(async () => {
+    pool = connect();
+    await pool.query('DROP TABLE IF EXISTS books, authors');
+    await pool.query('CREATE TABLE authors (id integer PRIMARY KEY, name text)');
+    await pool.query('CREATE TABLE books (id integer PRIMARY KEY, author_id integer, title text)');
+    await pool.query("INSERT INTO authors (id, name) VALUES (1, 'alpha'), (2, 'beta')");
+    await pool.query("INSERT INTO books (id, author_id, title) VALUES (1, 1, 'one'), (2, 1, 'two'), (3, 2, 'three')");
+  });
+
+  after(async () => {
+    await pool.query('DROP TABLE IF EXISTS books, authors');
+    await pool.end();
+  });
+
+  test('explains a relational query when the schema is supplied to the driver', async () => {
+    const explain = createExplain(postgresDriver(pool, { schema: relationalSchema }), { maxCost: 1000000 });
+
+    const analysis = await explain((db) => db.query.authors.findMany({ with: { books: true } }));
+
+    equal(analysis.passed, true, analysis.message);
+    ok(Array.isArray(analysis.plan));
   });
 });

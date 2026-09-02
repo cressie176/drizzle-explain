@@ -1,3 +1,12 @@
 import type { Driver } from './lib/index';
 
-export function mariadbDriver(client: unknown): Driver;
+/**
+ * @param config the Drizzle config forwarded to `drizzle()` when building the
+ * instrumented database — pass `{ schema }` (drizzle 0.x) or `{ relations }`
+ * (drizzle 1.x) so a callback using the relational query builder (`db.query.*`)
+ * can be explained. Parameterize `TDatabase` to type the callback's `db`.
+ */
+export function mariadbDriver<TDatabase = unknown>(
+  client: unknown,
+  config?: Record<string, unknown>,
+): Driver<TDatabase>;

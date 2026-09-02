@@ -84,6 +84,22 @@ test('findReservationsByRoom stays cheap', async () => {
 
 `explain` injects a database instance into your callback, runs the query it returns through `EXPLAIN ANALYZE`, and hands you back the analysis. Your query function is unchanged: in production it takes the real Drizzle instance; under test it takes the one `drizzle-explain` supplies, which returns the same rows the real one would.
 
+## Relational queries
+
+If your query uses Drizzle's relational query builder — `db.query.<table>.findMany(...)` and friends, rather than `db.select()` — the database instance needs to know your schema and relations, exactly as the real one does. Pass the same config you pass to `drizzle()` as the driver's second argument, and `drizzle-explain` builds the instrumented database with it:
+
+```ts
+import { createExplain } from 'drizzle-explain';
+import { postgresDriver } from 'drizzle-explain/postgres';
+import * as schema from './schema.ts';
+
+const explain = createExplain(postgresDriver(pool, { schema }), { maxCost: 100 });
+
+const analysis = await explain((db) => db.query.rooms.findMany({ with: { reservations: true } }));
+```
+
+The config accepts whatever `drizzle()` accepts (`schema`, `relations`, `casing`, …), and on drizzle 1.0 you pass `{ relations }` built with `defineRelations`, just as you do for the real instance. To type the callback's `db`, parameterize the driver — `postgresDriver<MyDatabase>(pool, { relations })` — and `db.query` is typed to your schema; it defaults to the untyped database otherwise. A callback that only uses the core query builder needs no config, so the argument is optional and existing calls are unaffected.
+
 ## API
 
 ### createExplain(driver, defaults?)
