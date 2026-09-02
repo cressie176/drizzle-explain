@@ -1,7 +1,7 @@
 const { deepEqual: deq, equal, ok, rejects } = require('node:assert/strict');
 const { before, after, describe, test } = require('node:test');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
-const { eq, TransactionRollbackError } = require('drizzle-orm');
+const { eq, sql, TransactionRollbackError } = require('drizzle-orm');
 const { mariadbDriver } = require('../../mariadb');
 const { Operation } = require('../../lib/operation');
 const { connect } = require('./connect');
@@ -394,6 +394,21 @@ describe('mariadbDriver', () => {
       const [statement] = await driver.explain((db) => db.select().from(widgets).orderBy(widgets.name));
 
       deq(tablesInTree(statement.root), ['widgets']);
+    });
+
+    test('keeps the access node of a scalar subquery', async () => {
+      const driver = mariadbDriver(client);
+
+      const [statement] = await driver.explain((db) =>
+        db
+          .select({
+            id: widgets.id,
+            total: sql`(SELECT COUNT(*) FROM widgets inner_widgets WHERE inner_widgets.quantity = widgets.quantity)`,
+          })
+          .from(widgets),
+      );
+
+      deq(tablesInTree(statement.root), tablesInRawPlan(statement.plan));
     });
 
     test('keeps the access node of a grouped query', async () => {

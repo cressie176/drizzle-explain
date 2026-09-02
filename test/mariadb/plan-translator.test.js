@@ -101,6 +101,17 @@ describe('mariadb plan translator', () => {
       deq(relationsOf(translatePlan(plan)), ['events']);
     });
 
+    test('finds the table of a scalar subquery', () => {
+      const plan = {
+        query_block: {
+          nested_loop: [{ table: table('l_outer') }],
+          subqueries: [{ query_block: { nested_loop: [{ table: table('l_inner') }] } }],
+        },
+      };
+
+      deq(relationsOf(translatePlan(plan)), ['l_outer', 'l_inner']);
+    });
+
     test('leaves the union result pseudo-table out while keeping its real tables', () => {
       const plan = {
         query_block: {
