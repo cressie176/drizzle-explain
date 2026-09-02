@@ -1,4 +1,4 @@
-const { equal: eq, deepEqual: deq } = require('node:assert/strict');
+const { equal: eq, deepEqual: deq, throws } = require('node:assert/strict');
 const { describe, test } = require('node:test');
 const { analysePlan } = require('../lib/analyse-plan');
 const { Operation } = require('../lib/operation');
@@ -226,6 +226,110 @@ describe('analysePlan', () => {
       eq(result.breaches.length, 1);
       eq(result.breaches[0].node, loop);
       eq(result.breaches[0].observed, Operation.NESTED_LOOP);
+    });
+
+    describe('scoped exemptions', () => {
+      const smallScan = () =>
+        node({ type: 'Seq Scan', operation: Operation.SEQ_SCAN, relation: 'authors', scanned: 40 });
+      const largeScan = () =>
+        node({ type: 'Seq Scan', operation: Operation.SEQ_SCAN, relation: 'books', scanned: 20000 });
+      const bothScans = (small, large) => node({ operation: Operation.NESTED_LOOP, children: [large, small] });
+
+      test('maxScanned exempts the small scan and leaves the large one breaching', () => {
+        const small = smallScan();
+        const large = largeScan();
+        const result = analysePlan(bothScans(small, large), {
+          disallowOperations: [Operation.SEQ_SCAN],
+          allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 500 }],
+        });
+        eq(result.passed, false);
+        eq(result.breaches.length, 1);
+        eq(result.breaches[0].node, large);
+        eq(result.exemptions.length, 1);
+        eq(result.exemptions[0].node, small);
+      });
+
+      test('maxScanned admits a node scanning exactly the threshold', () => {
+        const root = node({ operation: Operation.SEQ_SCAN, scanned: 500 });
+        const result = analysePlan(root, {
+          disallowOperations: [Operation.SEQ_SCAN],
+          allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 500 }],
+        });
+        eq(result.passed, true);
+      });
+
+      test('maxScanned never exempts a node the driver reported no scanned count for', () => {
+        const root = node({ operation: Operation.SEQ_SCAN });
+        const result = analysePlan(root, {
+          disallowOperations: [Operation.SEQ_SCAN],
+          allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 500 }],
+        });
+        eq(result.passed, false);
+      });
+
+      test('relation exempts only the table it names', () => {
+        const small = smallScan();
+        const large = largeScan();
+        const result = analysePlan(bothScans(small, large), {
+          disallowOperations: [Operation.SEQ_SCAN],
+          allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'authors' }],
+        });
+        eq(result.breaches.length, 1);
+        eq(result.breaches[0].node, large);
+      });
+
+      test('conditions combine, so a named table that grew past the threshold still breaches', () => {
+        const root = node({ operation: Operation.SEQ_SCAN, relation: 'authors', scanned: 900 });
+        const result = analysePlan(root, {
+          disallowOperations: [Operation.SEQ_SCAN],
+          allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'authors', maxScanned: 500 }],
+        });
+        eq(result.passed, false);
+      });
+
+      test('an entry only exempts the operation it names', () => {
+        const root = node({ operation: Operation.NESTED_LOOP, scanned: 1 });
+        const result = analysePlan(root, {
+          disallowOperations: [Operation.NESTED_LOOP],
+          allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 500 }],
+        });
+        eq(result.passed, false);
+      });
+
+      test('a bare operation and a conditional entry can be mixed', () => {
+        const scan = node({ type: 'Seq Scan', operation: Operation.SEQ_SCAN, scanned: 40 });
+        const loop = node({ operation: Operation.NESTED_LOOP, children: [scan] });
+        const result = analysePlan(loop, {
+          disallowOperations: [Operation.SEQ_SCAN, Operation.NESTED_LOOP],
+          allowOperations: [Operation.NESTED_LOOP, { operation: Operation.SEQ_SCAN, maxScanned: 500 }],
+        });
+        eq(result.passed, true);
+        eq(result.exemptions.length, 2);
+      });
+
+      test('rejects an entry naming a condition that does not exist', () => {
+        const root = node({ operation: Operation.SEQ_SCAN, scanned: 40 });
+        throws(
+          () =>
+            analysePlan(root, {
+              disallowOperations: [Operation.SEQ_SCAN],
+              allowOperations: [{ operation: Operation.SEQ_SCAN, maxScannned: 500 }],
+            }),
+          /unknown conditions: maxScannned/,
+        );
+      });
+
+      test('rejects an entry that names no operation, which would lift every ban', () => {
+        const root = node({ operation: Operation.SEQ_SCAN, scanned: 40 });
+        throws(
+          () =>
+            analysePlan(root, {
+              disallowOperations: [Operation.SEQ_SCAN],
+              allowOperations: [{ maxScanned: 500 }],
+            }),
+          /requires every entry to name an operation/,
+        );
+      });
     });
 
     test('allowOperations has no effect on an operation that was not disallowed', () => {

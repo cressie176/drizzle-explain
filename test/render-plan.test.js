@@ -214,6 +214,55 @@ describe('renderPlan', () => {
     });
   });
 
+  describe('exemptions', () => {
+    const scan = (overrides) => ({ type: 'Seq Scan', operation: 'SEQ_SCAN', children: [], ...overrides });
+
+    test('marks an exempted node with the conditions that allowed it', () => {
+      const small = scan({ relation: 'authors', scanned: 40 });
+      const large = scan({ relation: 'books', scanned: 20000 });
+      const root = { type: 'Nested Loop', children: [large, small] };
+      const analysis = {
+        passed: false,
+        breaches: [{ node: large, limit: 'disallowOperations', threshold: ['SEQ_SCAN'], observed: 'SEQ_SCAN' }],
+        exemptions: [{ node: small, exemption: { operation: 'SEQ_SCAN', maxScanned: 500 } }],
+      };
+
+      const message = render(root, analysis);
+
+      match(message, /Seq Scan on books {2}\(scanned=20000\) {2}✘ Seq Scan not allowed/);
+      match(message, /Seq Scan on authors {2}\(scanned=40\) {2}✓ allowed by maxScanned=500/);
+    });
+
+    test('lists every condition that allowed the node', () => {
+      const small = scan({ relation: 'authors', scanned: 40 });
+      const analysis = {
+        passed: false,
+        breaches: [{ node: small, limit: 'maxCost', threshold: 1, observed: 5 }],
+        exemptions: [{ node: small, exemption: { operation: 'SEQ_SCAN', relation: 'authors', maxScanned: 500 } }],
+      };
+
+      match(render(small, analysis), /✓ allowed by relation=authors, maxScanned=500/);
+    });
+
+    test('marks a node exempted by a bare operation without naming conditions', () => {
+      const small = scan({ relation: 'authors' });
+      const analysis = {
+        passed: false,
+        breaches: [{ node: small, limit: 'maxCost', threshold: 1, observed: 5 }],
+        exemptions: [{ node: small, exemption: 'SEQ_SCAN' }],
+      };
+
+      match(render(small, analysis), /✓ allowed$/m);
+    });
+
+    test('renders nothing extra when the analysis reports no exemptions', () => {
+      const root = scan({ relation: 'books', cost: 5 });
+      const analysis = { passed: false, breaches: [{ node: root, limit: 'maxCost', threshold: 1, observed: 5 }] };
+
+      doesNotMatch(render(root, analysis), /✓/);
+    });
+  });
+
   describe('colour', () => {
     const colourVars = ['CI', 'FORCE_COLOR', 'NO_COLOR'];
     const originalEnv = Object.fromEntries(colourVars.map((name) => [name, process.env[name]]));

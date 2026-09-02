@@ -1,4 +1,4 @@
-const { equal, deepEqual: deq, match, ok, rejects } = require('node:assert/strict');
+const { doesNotMatch, equal, deepEqual: deq, match, ok, rejects } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
 const { eq, relations } = require('drizzle-orm');
 const { integer, pgTable, text } = require('drizzle-orm/pg-core');
@@ -8,6 +8,17 @@ const { connect } = require('./connect');
 
 const widgets = pgTable('widgets', {
   id: integer('id'),
+  name: text('name'),
+});
+
+const lookups = pgTable('lookups', {
+  id: integer('id'),
+  label: text('label'),
+});
+
+const events = pgTable('events', {
+  id: integer('id'),
+  lookupId: integer('lookup_id'),
   name: text('name'),
 });
 
@@ -163,6 +174,69 @@ describe('createExplain over the PostgreSQL driver', () => {
 
     const { rows } = await pool.query('SELECT id FROM widgets WHERE id = 60');
     deq(rows, []);
+  });
+
+  describe('scoped operation exemptions', () => {
+    before(async () => {
+      await pool.query('DROP TABLE IF EXISTS lookups');
+      await pool.query('CREATE TABLE lookups (id integer, label text)');
+      await pool.query("INSERT INTO lookups SELECT g, 'l' || g FROM generate_series(1, 40) g");
+      await pool.query('DROP TABLE IF EXISTS events');
+      await pool.query('CREATE TABLE events (id integer, lookup_id integer, name text)');
+      await pool.query("INSERT INTO events SELECT g, (g % 40) + 1, 'e' || g FROM generate_series(1, 5000) g");
+      await pool.query('ANALYZE lookups');
+      await pool.query('ANALYZE events');
+    });
+
+    after(async () => {
+      await pool.query('DROP TABLE IF EXISTS events');
+      await pool.query('DROP TABLE IF EXISTS lookups');
+    });
+
+    const joinBoth = (db) =>
+      db
+        .select({ name: events.name, label: lookups.label })
+        .from(events)
+        .innerJoin(lookups, eq(events.lookupId, lookups.id))
+        .where(eq(events.name, 'e99'));
+
+    test('maxScanned exempts the small table and still fails the large one', async () => {
+      const explain = createExplain(postgresDriver(pool), {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 500 }],
+      });
+
+      const analysis = await explain(joinBoth);
+
+      equal(analysis.passed, false);
+      match(analysis.message, /disallowed operation: Seq Scan on events/);
+      doesNotMatch(analysis.message, /disallowed operation: Seq Scan on lookups/);
+      match(analysis.message, /Seq Scan on lookups.*✓ allowed by maxScanned=500/);
+    });
+
+    test('relation exempts only the table it names', async () => {
+      const explain = createExplain(postgresDriver(pool), {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'lookups' }],
+      });
+
+      const analysis = await explain(joinBoth);
+
+      equal(analysis.passed, false);
+      match(analysis.message, /disallowed operation: Seq Scan on events/);
+      match(analysis.message, /Seq Scan on lookups.*✓ allowed by relation=lookups/);
+    });
+
+    test('a maxScanned generous enough for both passes the plan', async () => {
+      const explain = createExplain(postgresDriver(pool), {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 10000 }],
+      });
+
+      const analysis = await explain(joinBoth);
+
+      equal(analysis.passed, true, analysis.message);
+    });
   });
 
   test('rolls back a write executed through the query callback', async () => {

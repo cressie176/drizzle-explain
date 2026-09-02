@@ -283,6 +283,42 @@ const analysis = await explain((db) => summariseGrades(db), {
 
 Every such override is a place where someone looked at a plan and consciously accepted a specific operation for a specific query, the same discipline as a per-query `maxCost` override.
 
+#### Scoping an exemption to part of the plan
+
+Naming a bare operation lifts the ban across the whole plan, which is too blunt when a query touches tables of different sizes. A sequential scan is optimal on a 40-row lookup table and a defect on a 20,000-row one, and a join of the two would have to accept or reject both together. An entry can instead carry conditions, and exempts only the nodes that satisfy every one of them:
+
+```ts
+const explain = createExplain(postgresDriver(pool), {
+  disallowOperations: [Operation.SEQ_SCAN],
+  allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 500 }],
+});
+```
+
+```
+✘ disallowed operation: Seq Scan on books
+
+Nested Loop  (cost=360.9 estimated=1 actual=1 time=0.627ms)
+  Seq Scan on books  (cost=359 estimated=1 actual=1 scanned=20000 time=0.622ms)  ✘ Seq Scan not allowed
+  Seq Scan on authors  (cost=1.4 estimated=40 actual=40 scanned=40 time=0.002ms)  ✓ allowed by maxScanned=500
+```
+
+The lookup table is exempt and says why; the large table in the same plan still fails.
+
+| Condition | Exempts |
+|---|---|
+| operation | required on every entry, the operation being lifted |
+| relation | only nodes reading the table it names |
+| maxScanned | only nodes reading at most that many rows |
+
+`maxScanned` is usually the better of the two, because it states *why* the exemption is acceptable rather than merely that someone accepted it, and it withdraws itself: the day the lookup table grows past the threshold the test starts failing, which is the moment you wanted to hear about. `relation` is exact where size is not the reason. They combine, so `{ operation: Operation.SEQ_SCAN, relation: 'countries', maxScanned: 500 }` reads as "allow it on countries, and tell me when countries stops being small".
+
+Three details worth knowing:
+
+- A node the driver reported no `scanned` count for is never exempted by `maxScanned`. The exemption fails closed, because a driver that cannot supply the signal must not silently exempt everything.
+- Every entry must name an operation. A bare `{ maxScanned: 500 }` would lift every ban at once, so it is rejected rather than interpreted.
+- An entry naming a condition that does not exist is rejected too. A typo such as `maxScannned` would otherwise quietly become an unconditional exemption.
+- Exemptions are annotated in the failure message, as above, but a plan where nothing else failed produces no message at all, so an exemption on an otherwise clean plan is not reported.
+
 ### What it does not check
 
 **Execution time is reported in the plan but never asserted.** Wall-clock time depends on hardware, cache state, and concurrent load; it would be flaky in CI and meaninglessly fast on a developer laptop. Cost and row-estimate tolerance are properties of the plan, not the machine, so they're trustworthy anywhere. If you want to eyeball timing, it's in `analysis.plan`; just don't gate on it.

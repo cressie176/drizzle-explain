@@ -23,11 +23,17 @@ export interface PlanNode {
   children: PlanNode[];
 }
 
+export interface OperationExemption {
+  operation: Operation;
+  relation?: string;
+  maxScanned?: number;
+}
+
 export interface Limits {
   maxCost?: number;
   rowEstimateTolerance?: number;
   disallowOperations?: Operation[];
-  allowOperations?: Operation[];
+  allowOperations?: (Operation | OperationExemption)[];
 }
 
 export interface Analysis {

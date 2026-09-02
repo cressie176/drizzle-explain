@@ -1,4 +1,4 @@
-const { equal, match, ok, rejects } = require('node:assert/strict');
+const { doesNotMatch, equal, match, ok, rejects } = require('node:assert/strict');
 const { after, before, describe, test } = require('node:test');
 const { eq, relations } = require('drizzle-orm');
 const { int, mysqlTable, varchar } = require('drizzle-orm/mysql-core');
@@ -10,6 +10,17 @@ const widgets = mysqlTable('widgets', {
   id: int('id').primaryKey(),
   name: varchar('name', { length: 64 }),
   quantity: int('quantity'),
+});
+
+const lookups = mysqlTable('lookups', {
+  id: int('id'),
+  label: varchar('label', { length: 64 }),
+});
+
+const events = mysqlTable('events', {
+  id: int('id'),
+  lookupId: int('lookup_id'),
+  name: varchar('name', { length: 64 }),
 });
 
 const authors = mysqlTable('authors', {
@@ -171,6 +182,69 @@ describe('createExplain over the MariaDB driver', () => {
     const analysis = await explain((db) => db.select().from(widgets));
 
     equal(analysis.passed, true, analysis.message);
+  });
+
+  describe('scoped operation exemptions', () => {
+    before(async () => {
+      await client.query('DROP TABLE IF EXISTS lookups');
+      await client.query('CREATE TABLE lookups (id INT, label VARCHAR(64)) ENGINE=InnoDB');
+      await client.query('INSERT INTO lookups SELECT seq, CONCAT("l", seq) FROM seq_1_to_40');
+      await client.query('DROP TABLE IF EXISTS events');
+      await client.query('CREATE TABLE events (id INT, lookup_id INT, name VARCHAR(64)) ENGINE=InnoDB');
+      await client.query('INSERT INTO events SELECT seq, (seq % 40) + 1, CONCAT("e", seq) FROM seq_1_to_5000');
+      await client.query('ANALYZE TABLE lookups');
+      await client.query('ANALYZE TABLE events');
+    });
+
+    after(async () => {
+      await client.query('DROP TABLE IF EXISTS events');
+      await client.query('DROP TABLE IF EXISTS lookups');
+    });
+
+    const joinBoth = (db) =>
+      db
+        .select({ name: events.name, label: lookups.label })
+        .from(events)
+        .innerJoin(lookups, eq(events.lookupId, lookups.id))
+        .where(eq(events.name, 'e99'));
+
+    test('maxScanned exempts the small table and still fails the large one', async () => {
+      const explain = createExplain(mariadbDriver(client), {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 500 }],
+      });
+
+      const analysis = await explain(joinBoth);
+
+      equal(analysis.passed, false);
+      match(analysis.message, /disallowed operation: ALL on events/);
+      doesNotMatch(analysis.message, /disallowed operation: ALL on lookups/);
+      match(analysis.message, /ALL on lookups.*✓ allowed by maxScanned=500/);
+    });
+
+    test('relation exempts only the table it names', async () => {
+      const explain = createExplain(mariadbDriver(client), {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'lookups' }],
+      });
+
+      const analysis = await explain(joinBoth);
+
+      equal(analysis.passed, false);
+      match(analysis.message, /disallowed operation: ALL on events/);
+      match(analysis.message, /ALL on lookups.*✓ allowed by relation=lookups/);
+    });
+
+    test('a maxScanned generous enough for both passes the plan', async () => {
+      const explain = createExplain(mariadbDriver(client), {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, maxScanned: 10000 }],
+      });
+
+      const analysis = await explain(joinBoth);
+
+      equal(analysis.passed, true, analysis.message);
+    });
   });
 
   test('rolls back a write executed through the query callback', async () => {
