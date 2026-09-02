@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
-import { createExplain } from 'drizzle-explain';
+import { createExplain, Operation } from 'drizzle-explain';
 import { mariadbDriver } from 'drizzle-explain/mariadb';
+import type { Limits } from 'drizzle-explain';
 import type { Connection } from 'mysql2/promise';
 import { connect } from './connect.ts';
 import type { Db } from './queries.ts';
@@ -9,7 +10,7 @@ import * as queries from './queries.ts';
 
 type RunCase = {
   run: (db: Db) => unknown;
-  limits?: { maxCost?: number; rowEstimateTolerance?: number };
+  limits?: Limits;
   expectBreach?: boolean;
 };
 
@@ -49,6 +50,37 @@ const THRESHOLDS: Record<keyof typeof queries, Case[]> = {
   roomsByGrade: [
     { run: (db) => queries.roomsByGrade(db, 'standard'), limits: { maxCost: 100 } },
     { run: (db) => queries.roomsByGrade(db, 'penthouse'), limits: { maxCost: 100 } },
+  ],
+
+  // Counting rooms per grade reads the whole five-row grades table — right at
+  // that size — and reaches rooms through rooms_grade_idx. SEQ_SCAN is banned
+  // and lifted for the lookup alone, and only while it stays small.
+  roomCountsByGrade: [
+    {
+      run: (db) => queries.roomCountsByGrade(db),
+      limits: {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'grades', maxScanned: 10 }],
+      },
+    },
+  ],
+
+  // A rare grade is an indexed lookup on both tables, so the ban never bites.
+  // A common one is half the rooms, so MariaDB stops using the index and scans:
+  // the grades exemption does not cover it, which is the point of naming a table.
+  roomsByGradeWithLabel: [
+    {
+      run: (db) => queries.roomsByGradeWithLabel(db, 'penthouse'),
+      limits: { maxCost: 100, disallowOperations: [Operation.SEQ_SCAN] },
+    },
+    {
+      run: (db) => queries.roomsByGradeWithLabel(db, 'standard'),
+      limits: {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'grades', maxScanned: 10 }],
+      },
+      expectBreach: true,
+    },
   ],
 
   // chain -> hotel -> room join, driven by indexed foreign keys.

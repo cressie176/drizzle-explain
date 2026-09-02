@@ -1,6 +1,6 @@
-import { and, between, eq, like } from 'drizzle-orm';
+import { and, between, count, eq, like } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
-import { chains, hotels, reservations, rooms } from './schema.ts';
+import { chains, grades, hotels, reservations, rooms } from './schema.ts';
 
 export type Db = PgDatabase<any, any>;
 
@@ -18,6 +18,22 @@ export function occupancyByHotel(db: Db, hotelId: number, startDate: string, end
 
 export function roomsByGrade(db: Db, grade: string) {
   return db.select().from(rooms).where(eq(rooms.grade, grade));
+}
+
+export function roomsByGradeWithLabel(db: Db, grade: string) {
+  return db
+    .select({ number: rooms.number, hotelId: rooms.hotelId, grade: grades.label })
+    .from(rooms)
+    .innerJoin(grades, eq(rooms.grade, grades.code))
+    .where(eq(rooms.grade, grade));
+}
+
+export function roomCountsByGrade(db: Db) {
+  return db
+    .select({ grade: grades.label, total: count() })
+    .from(rooms)
+    .innerJoin(grades, eq(rooms.grade, grades.code))
+    .groupBy(grades.label);
 }
 
 export function reservationsForChain(db: Db, chainId: number) {

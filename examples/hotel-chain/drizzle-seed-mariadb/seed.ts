@@ -4,7 +4,7 @@ import type { Connection } from 'mysql2/promise';
 import { connect } from './connect.ts';
 import * as schema from './schema.ts';
 
-const TABLES = ['reservations', 'rooms', 'hotels', 'chains'] as const;
+const TABLES = ['reservations', 'rooms', 'hotels', 'chains', 'grades'] as const;
 
 async function main() {
   const connection = await connect();
@@ -44,6 +44,18 @@ async function createSchema(connection: Connection) {
       FOREIGN KEY (chain_id) REFERENCES chains(id)
     )`);
   await connection.query(`
+    CREATE TABLE grades (
+      code VARCHAR(16) PRIMARY KEY,
+      label VARCHAR(32) NOT NULL
+    )`);
+  await connection.query(`
+    INSERT INTO grades (code, label) VALUES
+      ('standard', 'Standard'),
+      ('superior', 'Superior'),
+      ('deluxe', 'Deluxe'),
+      ('suite', 'Suite'),
+      ('penthouse', 'Penthouse')`);
+  await connection.query(`
     CREATE TABLE rooms (
       id INT PRIMARY KEY AUTO_INCREMENT,
       hotel_id INT NOT NULL,
@@ -51,7 +63,8 @@ async function createSchema(connection: Connection) {
       grade VARCHAR(16) NOT NULL,
       INDEX rooms_hotel_id_idx (hotel_id),
       INDEX rooms_grade_idx (grade),
-      FOREIGN KEY (hotel_id) REFERENCES hotels(id)
+      FOREIGN KEY (hotel_id) REFERENCES hotels(id),
+      FOREIGN KEY (grade) REFERENCES grades(code)
     )`);
   await connection.query(`
     CREATE TABLE reservations (

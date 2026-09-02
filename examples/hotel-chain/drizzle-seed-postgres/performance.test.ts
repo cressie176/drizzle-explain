@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { createExplain } from 'drizzle-explain';
+import { createExplain, Operation } from 'drizzle-explain';
 import { postgresDriver } from 'drizzle-explain/postgres';
 import type { Driver, Limits } from 'drizzle-explain';
 import { connect } from './connect.ts';
@@ -34,6 +34,46 @@ const THRESHOLDS: Record<keyof typeof queries, Case[]> = {
     // of the table — the cost is inherent to the selectivity, not a missing index.
     { run: (db) => queries.roomsByGrade(db, 'standard'), limits: { maxCost: 5000 } },
   ],
+  // Joins the five-row grades lookup. PostgreSQL reads all five rather than
+  // using the index, which is the right choice at that size, so SEQ_SCAN is
+  // banned and lifted for that table alone — and only while it stays small.
+  // Rooms is reached through rooms_grade_idx, so it needs no exemption.
+  roomsByGradeWithLabel: [
+    {
+      run: (db) => queries.roomsByGradeWithLabel(db, 'penthouse'),
+      limits: {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'grades', maxScanned: 10 }],
+      },
+    },
+    // 'standard' is half the rooms, so the index gives way to a full scan. The
+    // grades exemption does not cover it: naming the table is what stops the
+    // allowance leaking onto the large one.
+    {
+      breaches: (db) => queries.roomsByGradeWithLabel(db, 'standard'),
+      limits: {
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'grades', maxScanned: 10 }],
+      },
+    },
+  ],
+
+  // Counting every room legitimately reads every room, so both scans are
+  // accepted — but for different reasons, and each says which.
+  roomCountsByGrade: [
+    {
+      run: (db) => queries.roomCountsByGrade(db),
+      limits: {
+        maxCost: 2000,
+        disallowOperations: [Operation.SEQ_SCAN],
+        allowOperations: [
+          { operation: Operation.SEQ_SCAN, relation: 'grades', maxScanned: 10 },
+          { operation: Operation.SEQ_SCAN, relation: 'rooms' },
+        ],
+      },
+    },
+  ],
+
   // Four-table join across the whole chain returns ~130k rows; accepted cost.
   reservationsForChain: [{ run: (db) => queries.reservationsForChain(db, 2), limits: { maxCost: 10000 } }],
   // Unindexed substring match forces a full scan — kept here to demonstrate a

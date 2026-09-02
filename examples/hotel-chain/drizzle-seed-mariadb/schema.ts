@@ -20,6 +20,14 @@ export const hotels = mysqlTable(
   }),
 );
 
+// A tiny reference table: five rows that every room joins to. Small enough
+// that the optimizer reads all of it rather than using the index, which is the
+// right choice at this size and the reason allowOperations exists.
+export const grades = mysqlTable('grades', {
+  code: varchar('code', { length: 16 }).primaryKey(),
+  label: varchar('label', { length: 32 }).notNull(),
+});
+
 export const rooms = mysqlTable(
   'rooms',
   {
@@ -28,6 +36,9 @@ export const rooms = mysqlTable(
       .notNull()
       .references(() => hotels.id),
     number: varchar('number', { length: 16 }).notNull(),
+    // Joined to grades.code, and constrained by a foreign key in the seed DDL.
+    // Left undeclared here so the seeders generate the skewed grade
+    // distribution rather than resolving the reference for us.
     grade: varchar('grade', { length: 16 }).notNull(),
   },
   (table) => ({

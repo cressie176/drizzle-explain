@@ -2,11 +2,10 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { generate, createPostgresSqlStreamSink } from 'drizzle-super-seed';
 import { connect } from './connect.ts';
-import { counts, rules } from './rules.ts';
-import * as schema from './schema.ts';
+import { counts, generated, rules } from './rules.ts';
 
 const DDL = `
-  DROP TABLE IF EXISTS reservations, rooms, hotels, chains CASCADE;
+  DROP TABLE IF EXISTS reservations, rooms, hotels, chains, grades CASCADE;
 
   CREATE TABLE chains (
     id serial PRIMARY KEY,
@@ -19,11 +18,23 @@ const DDL = `
     name text NOT NULL
   );
 
+  CREATE TABLE grades (
+    code text PRIMARY KEY,
+    label text NOT NULL
+  );
+
+  INSERT INTO grades (code, label) VALUES
+    ('standard', 'Standard'),
+    ('superior', 'Superior'),
+    ('deluxe', 'Deluxe'),
+    ('suite', 'Suite'),
+    ('penthouse', 'Penthouse');
+
   CREATE TABLE rooms (
     id serial PRIMARY KEY,
     hotel_id integer NOT NULL REFERENCES hotels(id),
     number integer NOT NULL,
-    grade text NOT NULL
+    grade text NOT NULL REFERENCES grades(code)
   );
 
   CREATE TABLE reservations (
@@ -47,10 +58,11 @@ const COMPOSE_FILE = fileURLToPath(new URL('../../../docker-compose.yml', import
 // Use psql from the PATH when available, honouring the standard PG* variables;
 // otherwise fall back to the psql inside the repo's compose service.
 function resolvePsql() {
-  if (isOnPath('psql')) return { command: 'psql', args: ['-v', 'ON_ERROR_STOP=1'], env: psqlEnvironment() };
+  const environment = psqlEnvironment();
+  if (isOnPath('psql')) return { command: 'psql', args: ['-v', 'ON_ERROR_STOP=1'], env: environment };
   return {
     command: 'docker',
-    args: ['compose', '-f', COMPOSE_FILE, 'exec', '-T', 'postgres', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'drizzle_explain', '-d', 'drizzle_explain'],
+    args: ['compose', '-f', COMPOSE_FILE, 'exec', '-T', 'postgres', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', environment.PGUSER, '-d', environment.PGDATABASE],
     env: process.env,
   };
 }
@@ -74,7 +86,7 @@ async function streamSeedIntoPsql() {
   const psql = resolvePsql();
   const load = spawn(psql.command, psql.args, { env: psql.env, stdio: ['pipe', 'ignore', 'inherit'] });
 
-  const report = await generate({ schema, rules, counts, seed: 1 }, createPostgresSqlStreamSink({ writable: load.stdin }));
+  const report = await generate({ schema: generated, rules, counts, seed: 1 }, createPostgresSqlStreamSink({ writable: load.stdin }));
 
   load.stdin.end();
   const code = await new Promise((resolve) => load.on('close', resolve));

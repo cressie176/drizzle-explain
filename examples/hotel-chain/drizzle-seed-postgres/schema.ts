@@ -17,6 +17,14 @@ export const hotels = pgTable(
   (table) => [index('hotels_chain_id_idx').on(table.chainId)],
 );
 
+// A tiny reference table: five rows that every room joins to. Small enough
+// that the optimizer reads all of it rather than using the index, which is the
+// right choice at this size and the reason allowOperations exists.
+export const grades = pgTable('grades', {
+  code: text('code').primaryKey(),
+  label: text('label').notNull(),
+});
+
 export const rooms = pgTable(
   'rooms',
   {
@@ -25,6 +33,9 @@ export const rooms = pgTable(
       .notNull()
       .references(() => hotels.id),
     number: integer('number').notNull(),
+    // Joined to grades.code, and constrained by a foreign key in the seed DDL.
+    // Left undeclared here so the seeders generate the skewed grade
+    // distribution rather than resolving the reference for us.
     grade: text('grade').notNull(),
   },
   (table) => [index('rooms_hotel_id_idx').on(table.hotelId), index('rooms_grade_idx').on(table.grade)],

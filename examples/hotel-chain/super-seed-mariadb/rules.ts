@@ -61,12 +61,21 @@ const reservationRules = {
   endDate: derive((reservation, context) => isoDate(Date.parse(reservation.startDate as string) + context.random.intBetween(1, 14) * DAY_MS)),
 } satisfies TableRules<typeof schema.reservations>;
 
+// grades is reference data, inserted by the DDL rather than generated, so the
+// generated schema names the four tables super-seed is responsible for.
+export const generated = {
+  chains: schema.chains,
+  hotels: schema.hotels,
+  rooms: schema.rooms,
+  reservations: schema.reservations,
+};
+
 export const rules = {
   chains: chainRules,
   hotels: hotelRules,
   rooms: roomRules,
   reservations: reservationRules,
-} satisfies SchemaRules<typeof schema>;
+} satisfies SchemaRules<typeof generated>;
 
 export const counts = {
   chains: 5,

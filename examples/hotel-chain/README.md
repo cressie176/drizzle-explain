@@ -1,6 +1,6 @@
 # hotel-chain
 
-A complete, runnable [`drizzle-explain`](../..) example. It models a hotel booking system — `chain → hotel → room → reservation` — seeds it to a production-like shape with [drizzle-seed](https://github.com/drizzle-team/drizzle-orm/tree/main/drizzle-seed), and performance-tests a handful of representative queries with `EXPLAIN ANALYZE` inside an always-rolled-back transaction.
+A complete, runnable [`drizzle-explain`](../..) example. It models a hotel booking system — `chain → hotel → room → reservation`, with a small `grades` reference table — seeds it to a production-like shape with [drizzle-seed](https://github.com/drizzle-team/drizzle-orm/tree/main/drizzle-seed), and performance-tests a handful of representative queries with `EXPLAIN ANALYZE` inside an always-rolled-back transaction.
 
 The same domain and the same testing pattern run against **both PostgreSQL and MariaDB**, seeded by **two different tools**, as four packages in one npm workspace:
 
@@ -19,6 +19,8 @@ That's the point: the queries and the coverage-map test are database-agnostic, a
 - **A coverage-enforced test.** `performance.test.ts` drives every query from a single `THRESHOLDS` map and fails if any exported query is missing from it — no query can be silently untested.
 - **Shaped data, not just volume.** The seed skews room grades (most `standard`, few `penthouse`) and concentrates reservations in summer, so date-range and grade predicates have realistically different selectivity — which is what makes the optimizer's plan choices interesting to test.
 - **A deliberate breach.** An unindexed leading-wildcard name match forces a full scan of the reservations table. Tested with a tiny `maxCost` it **fails**, and the test asserts `passed === false` with a non-empty annotated plan message — living documentation of what a failure looks like.
+- **Bans scoped to the table that earned them.** A five-row `grades` lookup joins to every room. The optimizer reads all five rather than using the index, which is the right choice at that size, so `SEQ_SCAN` is banned across the query and lifted for that one table with `allowOperations: [{ operation: Operation.SEQ_SCAN, relation: 'grades', maxScanned: 10 }]`. The same query filtered on a common grade scans `rooms` too, and still fails: naming the table is what stops the allowance leaking onto the large one, and `maxScanned` withdraws it if the lookup ever stops being small.
+
 - **Accepted costs are explicit.** A few genuinely expensive queries (a summer occupancy range, a whole-chain join) carry per-query `maxCost` overrides with a comment. That is the check working, not failing: every override is a place a human looked at the plan and accepted its cost.
 - **A signal skipped, not failed (MariaDB).** MariaDB omits a cost for a `const` primary-key lookup, so `maxCost` has nothing to check there. That case sets `maxCost: 0` — a limit nothing could satisfy — and still passes, proving the driver skips an unavailable signal rather than failing on it.
 
@@ -48,13 +50,13 @@ Connection settings can be overridden with the standard environment variables �
 
 ## Seeding shape
 
-Both packages seed with the same skew so the plans are comparable: 5 chains; hotels split 0.7/0.3 between small and large fan-out; rooms 0.6/0.4; room grades weighted `standard` 0.5, `superior` 0.3, `deluxe` 0.15, `suite`+`penthouse` 0.05; reservations 0.8/0.2 with `startDate` concentrated in summer (`2025-05-01` … `2025-09-30`).
+Both packages seed with the same skew so the plans are comparable: 5 chains; hotels split 0.7/0.3 between small and large fan-out; rooms 0.6/0.4; room grades weighted `standard` 0.5, `superior` 0.3, `deluxe` 0.15, `suite`+`penthouse` 0.05, each joining to one of the five rows the seed DDL inserts into `grades`; reservations 0.8/0.2 with `startDate` concentrated in summer (`2025-05-01` … `2025-09-30`).
 
 ## Files (per package)
 
 | File | Purpose |
 |---|---|
-| `schema.ts` | Drizzle schema for `chain → hotel → room → reservation`, with the indexes the queries rely on |
+| `schema.ts` | Drizzle schema for `chain → hotel → room → reservation`, plus the `grades` reference table, with the indexes the queries rely on |
 | `seed.ts` | Drops/recreates tables, seeds shaped data, refreshes statistics |
 | `rules.ts` | (super-seed packages) per-column generation rules and parent-child counts |
 | `queries.ts` | Exported query functions under test |

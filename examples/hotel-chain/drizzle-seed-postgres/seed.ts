@@ -5,7 +5,7 @@ import { connect } from './connect.ts';
 import * as schema from './schema.ts';
 
 const DDL = sql`
-  DROP TABLE IF EXISTS reservations, rooms, hotels, chains CASCADE;
+  DROP TABLE IF EXISTS reservations, rooms, hotels, chains, grades CASCADE;
 
   CREATE TABLE chains (
     id serial PRIMARY KEY,
@@ -18,11 +18,23 @@ const DDL = sql`
     name text NOT NULL
   );
 
+  CREATE TABLE grades (
+    code text PRIMARY KEY,
+    label text NOT NULL
+  );
+
+  INSERT INTO grades (code, label) VALUES
+    ('standard', 'Standard'),
+    ('superior', 'Superior'),
+    ('deluxe', 'Deluxe'),
+    ('suite', 'Suite'),
+    ('penthouse', 'Penthouse');
+
   CREATE TABLE rooms (
     id serial PRIMARY KEY,
     hotel_id integer NOT NULL REFERENCES hotels(id),
     number integer NOT NULL,
-    grade text NOT NULL
+    grade text NOT NULL REFERENCES grades(code)
   );
 
   CREATE TABLE reservations (
@@ -41,7 +53,14 @@ const DDL = sql`
 `;
 
 async function seedShapedData(db: ReturnType<typeof drizzle>) {
-  await seed(db, schema, { seed: 1 }).refine((f) => ({
+  const generated = {
+    chains: schema.chains,
+    hotels: schema.hotels,
+    rooms: schema.rooms,
+    reservations: schema.reservations,
+  };
+
+  await seed(db, generated, { seed: 1 }).refine((f) => ({
     chains: {
       count: 5,
       with: {

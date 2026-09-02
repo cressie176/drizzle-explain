@@ -8,10 +8,9 @@ import { fileURLToPath } from 'node:url';
 import type { Connection } from 'mysql2/promise';
 import { generate, createMariaDbSqlFileSink } from 'drizzle-super-seed';
 import { connect } from './connect.ts';
-import { counts, rules } from './rules.ts';
-import * as schema from './schema.ts';
+import { counts, generated, rules } from './rules.ts';
 
-const TABLES = ['reservations', 'rooms', 'hotels', 'chains'] as const;
+const TABLES = ['reservations', 'rooms', 'hotels', 'chains', 'grades'] as const;
 
 const COMPOSE_FILE = fileURLToPath(new URL('../../../docker-compose.yml', import.meta.url));
 
@@ -37,6 +36,18 @@ async function createSchema(connection: Connection) {
       FOREIGN KEY (chain_id) REFERENCES chains(id)
     )`);
   await connection.query(`
+    CREATE TABLE grades (
+      code VARCHAR(16) PRIMARY KEY,
+      label VARCHAR(32) NOT NULL
+    )`);
+  await connection.query(`
+    INSERT INTO grades (code, label) VALUES
+      ('standard', 'Standard'),
+      ('superior', 'Superior'),
+      ('deluxe', 'Deluxe'),
+      ('suite', 'Suite'),
+      ('penthouse', 'Penthouse')`);
+  await connection.query(`
     CREATE TABLE rooms (
       id INT PRIMARY KEY AUTO_INCREMENT,
       hotel_id INT NOT NULL,
@@ -44,7 +55,8 @@ async function createSchema(connection: Connection) {
       grade VARCHAR(16) NOT NULL,
       INDEX rooms_hotel_id_idx (hotel_id),
       INDEX rooms_grade_idx (grade),
-      FOREIGN KEY (hotel_id) REFERENCES hotels(id)
+      FOREIGN KEY (hotel_id) REFERENCES hotels(id),
+      FOREIGN KEY (grade) REFERENCES grades(code)
     )`);
   await connection.query(`
     CREATE TABLE reservations (
@@ -69,7 +81,7 @@ function resolveClient() {
   if (isOnPath('mysql')) return { command: 'mysql', args: clientArguments() };
   return {
     command: 'docker',
-    args: ['compose', '-f', COMPOSE_FILE, 'exec', '-T', 'mariadb', 'mariadb', '-u', 'drizzle_explain', '-pdrizzle_explain', 'drizzle_explain'],
+    args: ['compose', '-f', COMPOSE_FILE, 'exec', '-T', 'mariadb', 'mariadb', ...credentialArguments()],
   };
 }
 
@@ -78,11 +90,11 @@ function isOnPath(command: string) {
 }
 
 function clientArguments() {
+  return ['-h', process.env.MARIADB_HOST ?? '127.0.0.1', '-P', process.env.MARIADB_PORT ?? '3306', ...credentialArguments()];
+}
+
+function credentialArguments() {
   return [
-    '-h',
-    process.env.MARIADB_HOST ?? '127.0.0.1',
-    '-P',
-    process.env.MARIADB_PORT ?? '3306',
     '-u',
     process.env.MARIADB_USER ?? 'drizzle_explain',
     `-p${process.env.MARIADB_PASSWORD ?? 'drizzle_explain'}`,
@@ -112,7 +124,7 @@ async function run() {
 
   console.log('[2/3] Generating SQL files with drizzle-super-seed…');
   const directory = await mkdtemp(join(tmpdir(), 'hotel-chain-seed-'));
-  const report = await generate({ schema, rules, counts, seed: 1 }, createMariaDbSqlFileSink({ directory }));
+  const report = await generate({ schema: generated, rules, counts, seed: 1 }, createMariaDbSqlFileSink({ directory }));
 
   console.log('[3/3] Loading the files through the mariadb client…');
   await loadFiles(directory);
