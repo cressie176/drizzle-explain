@@ -367,6 +367,46 @@ describe('mariadbDriver', () => {
     });
   });
 
+  describe('plan coverage', () => {
+    const tablesInRawPlan = (value, found = []) => {
+      if (value && typeof value === 'object') {
+        if (typeof value.table_name === 'string') found.push(value.table_name);
+        for (const child of Object.values(value)) tablesInRawPlan(child, found);
+      }
+      return found;
+    };
+    const tablesInTree = (root) =>
+      flatten(root)
+        .map((node) => node.relation)
+        .filter(Boolean);
+
+    test('every table the plan names survives translation', async () => {
+      const driver = mariadbDriver(client);
+
+      const [statement] = await driver.explain((db) => db.select().from(widgets).orderBy(widgets.name));
+
+      deq(tablesInTree(statement.root), tablesInRawPlan(statement.plan));
+    });
+
+    test('keeps the access node of a sorted query', async () => {
+      const driver = mariadbDriver(client);
+
+      const [statement] = await driver.explain((db) => db.select().from(widgets).orderBy(widgets.name));
+
+      deq(tablesInTree(statement.root), ['widgets']);
+    });
+
+    test('keeps the access node of a grouped query', async () => {
+      const driver = mariadbDriver(client);
+
+      const [statement] = await driver.explain((db) =>
+        db.select({ quantity: widgets.quantity }).from(widgets).groupBy(widgets.quantity),
+      );
+
+      deq(tablesInTree(statement.root), ['widgets']);
+    });
+  });
+
   test('returns one statement per executed query', async () => {
     const driver = mariadbDriver(client);
     const statements = await driver.explain((db) => db.select().from(widgets));

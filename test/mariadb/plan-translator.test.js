@@ -66,4 +66,55 @@ describe('mariadb plan translator', () => {
       deq(node.children, []);
     });
   });
+
+  describe('nested access nodes', () => {
+    const flatten = (node) => [node, ...node.children.flatMap(flatten)];
+    const relationsOf = (root) =>
+      flatten(root)
+        .map((node) => node.relation)
+        .filter(Boolean);
+    const table = (name) => ({ table_name: name, access_type: 'ALL', rows: 1, r_rows: 1 });
+
+    test('finds the inner table of a block nested loop join', () => {
+      const plan = {
+        query_block: {
+          nested_loop: [{ table: table('lookups') }, { 'block-nl-join': { table: table('events') } }],
+        },
+      };
+
+      deq(relationsOf(translatePlan(plan)), ['lookups', 'events']);
+    });
+
+    test('finds a table sorted to a file', () => {
+      const plan = {
+        query_block: { nested_loop: [{ read_sorted_file: { filesort: { table: table('events') } } }] },
+      };
+
+      deq(relationsOf(translatePlan(plan)), ['events']);
+    });
+
+    test('finds a table grouped through a temporary table', () => {
+      const plan = {
+        query_block: { filesort: { temporary_table: { nested_loop: [{ table: table('events') }] } } },
+      };
+
+      deq(relationsOf(translatePlan(plan)), ['events']);
+    });
+
+    test('leaves the union result pseudo-table out while keeping its real tables', () => {
+      const plan = {
+        query_block: {
+          union_result: {
+            table_name: '<union1,2>',
+            query_specifications: [
+              { query_block: { nested_loop: [{ table: table('events') }] } },
+              { query_block: { nested_loop: [{ table: table('lookups') }] } },
+            ],
+          },
+        },
+      };
+
+      deq(relationsOf(translatePlan(plan)), ['events', 'lookups']);
+    });
+  });
 });
